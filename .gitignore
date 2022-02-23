@@ -1,4 +1,6 @@
-.DS_Store
+########################################
+# Ignore files originally sourced from standard github android template:
+########################################
 
 # Built application files
 *.apk
@@ -85,3 +87,64 @@ lint/generated/
 lint/outputs/
 lint/tmp/
 # lint/reports/
+
+########################################
+# Ignore general dev junk and linked files from sibling digger project
+########################################
+*~
+.DS_Store
+
+app/src/main/assets/index.html
+app/src/main/assets/css/digger.css
+app/src/main/assets/js/jtmin.js
+app/src/main/assets/js/app.js
+app/src/main/assets/img/album.png
+app/src/main/assets/img/arrow12right.png
+app/src/main/assets/img/albumact.png
+app/src/main/assets/img/comment.png
+app/src/main/assets/img/bumpup.png
+app/src/main/assets/img/commentact.png
+app/src/main/assets/img/dbicon.png
+app/src/main/assets/img/email.png
+app/src/main/assets/img/export.png
+app/src/main/assets/img/filteroff.png
+app/src/main/assets/img/filteroutline.png
+app/src/main/assets/img/filteron.png
+app/src/main/assets/img/hknob.png
+app/src/main/assets/img/info.png
+app/src/main/assets/img/infoact.png
+app/src/main/assets/img/logo.png
+app/src/main/assets/img/panback.png
+app/src/main/assets/img/panelsbg.png
+app/src/main/assets/img/panface.png
+app/src/main/assets/img/pause.png
+app/src/main/assets/img/play.png
+app/src/main/assets/img/pushtoggleb.png
+app/src/main/assets/img/ranger.png
+app/src/main/assets/img/recordcrate.png
+app/src/main/assets/img/search.png
+app/src/main/assets/img/skip.png
+app/src/main/assets/img/sleep.png
+app/src/main/assets/img/stars18ptCg.png
+app/src/main/assets/img/sleepactive.png
+app/src/main/assets/img/snooze.png
+app/src/main/assets/img/stars18ptC.png
+app/src/main/assets/img/trash.png
+app/src/main/assets/img/trashdis.png
+app/src/main/assets/img/tunefork.png
+app/src/main/assets/img/tuneforkact.png
+app/src/main/assets/img/views.png
+app/src/main/assets/img/vknob.png
+app/src/main/assets/img/viewsact.png
+app/src/main/assets/docs/hubsyncNotes.txt
+app/src/main/assets/docs/manual.html
+app/src/main/assets/docs/metadata.html
+app/src/main/assets/docs/musicfriend.html
+app/src/main/assets/docs/retrievalclassification.txt
+app/src/main/assets/docs/websrvapp.html
+app/src/main/assets/js/amd/deck.js
+app/src/main/assets/docs/spotifylimitations.txt
+app/src/main/assets/js/amd/player.js
+app/src/main/assets/js/amd/filter.js
+app/src/main/assets/js/amd/svc.js
+app/src/main/assets/js/amd/top.js
