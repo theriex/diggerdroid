@@ -12,7 +12,8 @@ var linker = (function () {
     "use strict";
 
     var fs = require("fs");
-    var ws = {linkdirs:["", "css", "img", "js", "js/amd", "docs"]};
+    var ws = {linkdirs:["", "css", "img", "js", "js/amd", "docs"],
+              ovr:{"svc.js": "Local version to interface with phone"}};
 
 
     function makeWorkingSetRoots () {
@@ -33,6 +34,7 @@ var linker = (function () {
         var hfp = ws.lnkr + relpath + "/" + fname;
         var dfp = ws.digr + relpath + "/" + fname;
         if(fname.endsWith("~")) { return; }
+        if(ws.ovr[fname]) { return; }
         if(!jslf(fs, "existsSync", hfp)) {
             if(cmd === "create") {
                 fs.symlink(dfp, hfp, function (err) {
