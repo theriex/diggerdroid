@@ -11,8 +11,10 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import android.Manifest.permission.READ_EXTERNAL_STORAGE
+import android.database.Cursor
 import java.io.File
 import java.io.InputStream
+import java.io.OutputStream
 
 class MainActivity : AppCompatActivity() {
     var dais = ""  //Digger Audio Information Summary
@@ -56,13 +58,23 @@ class MainActivity : AppCompatActivity() {
         return "\"$attr\": \"$encval\""
     }
 
+    fun cstrval(cursor: Cursor, idx:Int) : String {
+        val type = cursor.getType(idx)
+        if(type == Cursor.FIELD_TYPE_NULL) {
+            return "" }
+        if(type == Cursor.FIELD_TYPE_INTEGER) {
+            return cursor.getInt(idx).toString() }
+        return cursor.getString(idx)
+    }
+
     fun fetchMusicData() {
         val jsonsb = StringBuilder()
         val select = MediaStore.Audio.Media.IS_MUSIC + " != 0";
-        val cols = arrayOf(
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM)
+        val cols = arrayOf(  //DISC_NUMBER column not available
+            MediaStore.Audio.Media.TRACK,        //Integer
+            MediaStore.Audio.Media.TITLE,        //String
+            MediaStore.Audio.Media.ARTIST,       //String
+            MediaStore.Audio.Media.ALBUM)        //String
         contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             cols, select, null, null
@@ -71,9 +83,10 @@ class MainActivity : AppCompatActivity() {
                 if(jsonsb.length > 0) {
                     jsonsb.append(",")}
                 jsonsb.append("{" +
-                        jsonAV("title", cursor.getString(0)) + "," +
-                        jsonAV("artist", cursor.getString(1)) + "," +
-                        jsonAV("album", cursor.getString(2)) + "}") } }
+                        jsonAV("track", cstrval(cursor, 0)) + "," +
+                        jsonAV("title", cstrval(cursor, 1)) + "," +
+                        jsonAV("artist", cstrval(cursor, 2)) + "," +
+                        jsonAV("album", cstrval(cursor, 3)) + "}") } }
         dais = "[" + jsonsb.toString() + "]"
     }
 
@@ -89,13 +102,24 @@ class WebAppInterface(private val context: MainActivity) {
         val text = inputStream.bufferedReader().use { it.readText() }
         return text
     }
+    fun writeFile(file: File, txt:String) {
+        file.writeText(txt)
+    }
     @JavascriptInterface
     fun readConfig() : String {
         return readFile(File(context.filesDir, ".digger_config.json"))
     }
     @JavascriptInterface
+    fun writeConfig(cfgjson: String) {
+        writeFile(File(context.filesDir, ".digger_config.json"), cfgjson)
+    }
+    @JavascriptInterface
     fun readDigDat() : String {
         return readFile(File(context.filesDir, "digdat.json"))
+    }
+    @JavascriptInterface
+    fun writeDigDat(dbjson: String) {
+        writeFile(File(context.filesDir, "digdat.json"), dbjson)
     }
     @JavascriptInterface
     fun requestMediaRead()  {

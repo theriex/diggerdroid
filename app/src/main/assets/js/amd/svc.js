@@ -20,6 +20,15 @@ app.svc = (function () {
     var mgrs = {};  //general container for managers
 
 
+    //Copy export manager handles playlist creation.  No file copying.
+    mgrs.cpx = (function () {
+    return {
+        exportSongs: function (/*dat, statusfunc, contfunc, errfunc*/) {
+            jt.log("svc.cpx.exportSongs not implemented yet"); }
+    };  //end mgrs.cpx returned functions
+    }());
+
+
     //user and config processing
     mgrs.usr = (function () {
     return {
@@ -69,15 +78,27 @@ app.svc = (function () {
                 song.ab = dai.album;
                 if(!song.ar) {  //artist required for hub sync
                     mgrs.sg.setArtistFromPath(song); } }); },
+        parseAudioSummary: function (dais) {
+            dais = JSON.parse(dais);
+            dais = dais.filter((d) => d.title);  //title is required
+            dais.forEach(function (dai) {  //synthesize path
+                var title = dai.title;
+                if(dai.track.length >= 1) {
+                    if(dai.track === 1) {
+                        dai.track = "0" + dai.track; }
+                    title = dai.track + " " + title; }
+                dai.artist = dai.artist || "Unknown";
+                dai.album = dai.album || "Singles";
+                dai.path = dai.artist + "/" + dai.album + "/" + title; });
+            return dais; },
         mediaReadComplete: function (err) {
             var dbo; var dais;
             if(err) {
                 return jt.out(dbstatdiv, "Music read failed: " + err); }
             jt.out(dbstatdiv, "Fetching audio summary...");
             dais = Android.getAudioItemSummary();
-            return jt.log(dais);
             jt.out(dbstatdiv, "Parsing audio summary...");
-            dais = JSON.parse(dais);
+            dais = mgrs.sg.parseAudioSummary(dais);
             jt.out(dbstatdiv, "Merging Digger data...");
             dbo = mgrs.loc.getDatabase();
             Object.values(dbo.songs).forEach(function (s) {  //mark all deleted
@@ -115,12 +136,37 @@ app.svc = (function () {
         var dbo = null;
     return {
         getConfig: function () { return config; },
+        writeConfig: function () {
+            jt.err("No user configurable paths on Android platform."); },
+        noteUpdatedAcctsInfo: function(acctsinfo) {
+            config.acctsinfo = acctsinfo; },
+        updateAccount: function (acctsinfo, contf/*, errf*/) {
+            config.acctsinfo = acctsinfo;
+            Android.writeConfig(JSON.stringify(config));
+            setTimeout(function () { contf(config.acctsinfo); }, 50); },
         getDatabase: function () { return dbo; },
         songs: function () { return dbo.songs; },
-        fetchSongs: function (contf, ignore /*errf*/) {  //let init proc finish
+        fetchSongs: function (contf/*, errf*/) {  //let init proc finish
             setTimeout(function () { contf(dbo.songs); }, 200); },
+        fetchAlbum: function (song, contf/*, errf*/) {
+            var lsi = song.path.lastIndexOf("/");  //last separator index
+            const pp = song.path.slice(0, lsi + 1);  //path prefix
+            const abs = Object.values(dbo.songs)  //album songs
+            //simple ab match won't work (e.g. "Greatest Hits").  ab + ar fails
+            //if the artist name varies (e.g. "main artist featuring whoever".
+                .filter((s) => s.path.startsWith(pp))
+                .sort(function (a, b) {  //assuming filename start with track#
+                    return a.path.localeCompare(b.path); });
+            contf(song, abs); },
         writeSongs: function () {
             Android.writeDigDat(JSON.stringify(dbo)); },
+        updateSong: function (song, contf) {
+            mgrs.gen.copyUpdatedSongData(song, dbo.songs[song.path]);
+            mgrs.loc.writeSongs();
+            jt.out("modindspan", "");  //turn off indicator light
+            app.top.dispatch("a2h", "syncToHub");  //sched sync
+            if(contf) {
+                contf(dbo.songs[song.path]); } },
         loadInitialData: function () {
             try {
                 config = JSON.parse(Android.readConfig() || "{}");
@@ -137,15 +183,48 @@ app.svc = (function () {
                           "filter"];  //show settings, app.deck.update
             uims.forEach(function (uim) { app[uim].initialDataLoaded(); });
             if(!dbo.scanned) {
-                setTimeout(mgrs.sg.loadLibrary, 50); } }
+                setTimeout(mgrs.sg.loadLibrary, 50); } },
+        hubSyncDat: function (/*data, contf, errf*/) {
+            jt.log("svc.loc.hubSyncDat not implemented yet"); },
+        noteUpdatedSongData: function (/*updsong*/) {
+            jt.log("svc.loc.noteUpdatedSongData not implemented yet"); },
+        updateHubAccount: function (/*contf, errf*/) {
+            jt.log("svc.loc.updateHubAccount not implemented yet"); },
+        signInOrJoin: function (/*endpoint, data, contf, errf*/) {
+            jt.log("svc.loc.signInOrJoin not implemented yet"); },
+        emailPwdReset: function (/*data, contf, errf*/) {
+            jt.log("svc.loc.emailPwdReset not implemented yet"); }
     };  //end mgrs.loc returned functions
     }());
 
 
     //general manager is main interface for app logic
     mgrs.gen = (function () {
+        var songfields = ["dsType", "batchconv", "aid", "ti", "ar", "ab",
+                          "el", "al", "kws", "rv", "fq", "lp", "nt",
+                          "dsId", "modified"];
     return {
-        getHostType: function () { return "loc"; },  //not running on web
+        getHostType: function () { return "loc"; },  //not running on web..
+        addFriend: function (/*mfem, contf, errf*/) {
+            jt.log("svc.gen.addFriend not implemented yet"); },
+        createFriend: function (/*dat, contf, errf*/) {
+            jt.log("svc.gen.createFriend not implemented yet"); },
+        friendContributions: function (/*contf, errf*/) {
+            jt.log("svc.gen.friendContributions not implemented yet"); },
+        clearFriendRatings: function (/*mfid, contf, errf*/) {
+            jt.log("svc.gen.clearFriendRatings not implemented yet"); },
+        authdata: function (obj) { //return obj post data, with an/at added
+            var digacc = app.top.dispatch("gen", "getAccount");
+            var authdat = jt.objdata({an:digacc.email, at:digacc.token});
+            if(obj) {
+                authdat += "&" + jt.objdata(obj); }
+            return authdat; },
+        copyUpdatedSongData: function (song, updsong) {
+            songfields.forEach(function (fld) {
+                if(updsong.hasOwnProperty(fld)) {  //don't copy undefined values
+                    song[fld] = updsong[fld]; } }); },
+        updateMultipleSongs: function (/*updss, contf, errf*/) {
+            jt.err("svc.gen.updateMultipleSongs is web only"); },
         initialize: function () { setTimeout(mgrs.loc.loadInitialData, 200); }
     };  //end mgrs.gen returned functions
     }());
@@ -156,8 +235,8 @@ return {
     getHostType: function () { return mgrs.gen.getHostType(); },
     songs: function () { return mgrs.loc.songs(); },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
-    fetchAlbum: function (s, cf, ef) { mgrs.gen.fetchAlbum(s, cf, ef); },
-    updateSong: function (song, contf) { mgrs.gen.updateSong(song, contf); },
+    fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
+    updateSong: function (song, contf) { mgrs.loc.updateSong(song, contf); },
     authdata: function (obj) { return mgrs.gen.authdata(obj); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     dispatch: function (mgrname, fname, ...args) {
