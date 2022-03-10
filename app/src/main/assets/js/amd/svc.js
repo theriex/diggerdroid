@@ -20,6 +20,33 @@ app.svc = (function () {
     var mgrs = {};  //general container for managers
 
 
+    mgrs.mp = (function () {
+    return {
+        requestStatusUpdate: function (/*contf*/) {
+            //Get playback info and call player.mob.notePlaybackStatus
+            Android.requestStatusUpdate(); },
+        pause: function () {
+            Android.pause(); },
+        resume: function () {
+            Android.resume(); },
+        seek: function (ms) {
+            Android.seek(ms); },
+        playSong: function (path) {
+            jt.log("mp.playSong: " + path);
+            try {
+                Android.playSong(path);
+            } catch(e) {
+                jt.log("playSong exception: " + e);
+                mgrs.mp.playerFailure("Service crashed");
+            } },
+        playerFailure: function (err) {
+            jt.log("mp.playerFailure: " + err);
+            app.player.dispatch("mob", "handlePlayFailure",
+                                "Player error", err); }
+    };  //end mgrs.mp returned functions
+    }());
+
+
     //Copy export manager handles playlist creation.  No file copying.
     mgrs.cpx = (function () {
     return {
@@ -80,16 +107,15 @@ app.svc = (function () {
                     mgrs.sg.setArtistFromPath(song); } }); },
         parseAudioSummary: function (dais) {
             dais = JSON.parse(dais);
-            dais = dais.filter((d) => d.title);  //title is required
-            dais.forEach(function (dai) {  //synthesize path
-                var title = dai.title;
-                if(dai.track.length >= 1) {
-                    if(dai.track === 1) {
-                        dai.track = "0" + dai.track; }
-                    title = dai.track + " " + title; }
+            dais = dais.filter((d) =>  //title and playback path required
+                d.title && (d.data || (d.relpath && d.dispname)));
+            dais.forEach(function (dai) {  //fill fields, make playback path
                 dai.artist = dai.artist || "Unknown";
                 dai.album = dai.album || "Singles";
-                dai.path = dai.artist + "/" + dai.album + "/" + title; });
+                if(dai.data) {  //prefer full path if available
+                    dai.path = dai.data; }
+                else {
+                    dai.path = dai.relpath + dai.dispname; } });
             return dais; },
         mediaReadComplete: function (err) {
             var dbo; var dais;
@@ -175,6 +201,7 @@ app.svc = (function () {
                 return jt.err("Initial data load failed: " + e); }
             config = mgrs.usr.verifyConfig(config);
             dbo = mgrs.sg.verifyDatabase(dbo);
+            jt.log("dbs " + Object.keys(dbo.songs));
             //background fails to load. Set explicitely so things are visible:
             const cssbg = "url('" + app.dr("/img/panelsbg.png") + "')";
             jt.byId("contentdiv").style.backgroundImage = cssbg;
@@ -205,6 +232,7 @@ app.svc = (function () {
                           "dsId", "modified"];
     return {
         getHostType: function () { return "loc"; },  //not running on web..
+        getAudioPlatform: function () { return "Android"; },
         addFriend: function (/*mfem, contf, errf*/) {
             jt.log("svc.gen.addFriend not implemented yet"); },
         createFriend: function (/*dat, contf, errf*/) {
@@ -239,6 +267,7 @@ return {
     updateSong: function (song, contf) { mgrs.loc.updateSong(song, contf); },
     authdata: function (obj) { return mgrs.gen.authdata(obj); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
+    playerFailure: function (err) { mgrs.mp.playerFailure(err); },
     dispatch: function (mgrname, fname, ...args) {
         return mgrs[mgrname][fname].apply(app.svc, args); }
 };  //end of returned functions
