@@ -4,9 +4,12 @@ import android.Manifest.permission.READ_EXTERNAL_STORAGE
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.database.Cursor
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Binder
+import android.os.IBinder
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -37,6 +40,8 @@ class MainActivity : AppCompatActivity() {
         else {
             stat = "READ_EXTERNAL_STORAGE permission denied." }
         jsCallback("app.svc.mediaReadComplete($stat)") }
+
+    val dsi = DiggerServiceInterface(this)
 
     fun jsCallback(jstxt: String) {
         Log.d("Digger", "jsCallback: " + jstxt)
@@ -127,6 +132,76 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+class DiggerServiceInterface(private val context: MainActivity) {
+    //must start the service first before trying to bind to it, otherwise it
+    //won't continue in the background.
+    var command = ""
+    var param = ""
+    var dur = 0
+    var pos = 0
+    var state = ""    //"playing" or "paused"
+
+    val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?,
+                                        binder: IBinder?) {
+            val digbind = binder as DiggerAudioService.DiggerBinder
+            val das = digbind.getService()
+            if(das.mp == null) {
+                dur = 0
+                pos = 0
+                state = "" }
+            else {
+                val mp = das.mp!!
+                when(command) {
+                    "pause" -> mp.pause()
+                    "resume" -> mp.start()
+                    "seek" -> mp.seekTo(param.toInt()) }
+                dur = mp.getDuration()
+                pos = mp.getCurrentPosition()
+                if(mp.isPlaying()) {
+                    state = "playing" }
+                else {
+                    state = "paused" } }
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            Log.d("Digger", "ServiceInterface disconnected")
+        }
+    }
+
+    fun cname() : ComponentName {
+        return ComponentName(context,
+                             "com.diggerhub.digger.DiggerAudioService")
+    }
+
+    fun svcexec(svccommand:String, svcparam:String) {
+        command = svccommand
+        param = svcparam
+        val exi = Intent("android.media.browse.MediaBrowserService")
+        exi.setComponent(cname())
+        //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
+        val flags = 0
+        context.bindService(exi, connection, flags)
+        context.unbindService(connection)
+        val json = "{\"state\":\"$state\",\"pos\":$pos,\"dur\":$dur}"
+        val callback = "app.svc.notePlaybackStatus($json)"
+        context.jsCallback(callback)
+    }
+
+
+    fun playSong(path: String) {
+        //launch DiggerAudioService via manifest intent-filter
+        val exi = Intent("android.media.browse.MediaBrowserService",
+                         Uri.fromFile(File(path)))
+        exi.setComponent(cname())
+        try {  //if service already running, onStartCommand is called directly
+            context.startService(exi)
+        } catch(e: Exception) {
+            //can't jsCallback because still executing failed call
+            Log.e("Digger", "playSong failed", e) }
+    }
+}
+
+
 class WebAppInterface(private val context: MainActivity) {
     fun readFile(file: File) : String {
         file.createNewFile()  //create a new empty file if no file exists
@@ -163,43 +238,39 @@ class WebAppInterface(private val context: MainActivity) {
     }
     @JavascriptInterface
     fun playSong(path: String) {
-        Log.d("DiggerWAI","playSong " + path)
-        //launch DiggerAudioService via manifest intent-filter, resulting in
-        //call to onStartCommand
-        val exi = Intent("android.media.browse.MediaBrowserService",
-                         Uri.fromFile(File(path)))
-        exi.setComponent(
-            ComponentName(context,
-                          "com.diggerhub.digger.DiggerAudioService"))
-        try {
-            context.startService(exi)
-        } catch(e: Exception) {
-            //can't jsCallback because still executing failed call
-            Log.e("Digger", "playSong failed", e)
-        }
+        context.dsi.playSong(path)
     }
     @JavascriptInterface
     fun requestStatusUpdate() {
-        Log.d("DiggerDroid", "requestStatusUpdate not implemented yet")
+        context.dsi.svcexec("status", "")
     }
     @JavascriptInterface
     fun pause() {
-        Log.d("DiggerDroid", "pause not implemented yet")
+        context.dsi.svcexec("pause", "")
     }
     @JavascriptInterface
     fun resume() {
-        Log.d("DiggerDroid", "resume not implemented yet")
+        context.dsi.svcexec("resume", "")
     }
     @JavascriptInterface
-    fun seek() {
-        Log.d("DiggerDroid", "seek not implemented yet")
+    fun seek(ms: Int) {
+        context.dsi.svcexec("resume", ms.toString())
     }
 }
 
 class DiggerAudioService : MediaBrowserServiceCompat(),
                     MediaPlayer.OnPreparedListener,
                     MediaPlayer.OnErrorListener {
-    private var mp: MediaPlayer? = null
+    var mp: MediaPlayer? = null
+
+    val binder = DiggerBinder()
+    inner class DiggerBinder: Binder() {
+        fun getService(): DiggerAudioService {
+            return this@DiggerAudioService }
+    }
+    override fun onBind(intent: Intent): IBinder {
+        return binder
+    }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         Log.d("Digger", "onStartCommand called")

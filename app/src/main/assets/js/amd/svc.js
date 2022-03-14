@@ -42,7 +42,10 @@ app.svc = (function () {
         playerFailure: function (err) {
             jt.log("mp.playerFailure: " + err);
             app.player.dispatch("mob", "handlePlayFailure",
-                                "Player error", err); }
+                                "Player error", err); },
+        notePlaybackStatus: function (stat) {
+            app.player.dispatch("mob", "notePlaybackStatus",
+                                JSON.parse(stat)) }
     };  //end mgrs.mp returned functions
     }());
 
@@ -268,6 +271,7 @@ return {
     authdata: function (obj) { return mgrs.gen.authdata(obj); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     playerFailure: function (err) { mgrs.mp.playerFailure(err); },
+    notePlaybackStatus: function (stat) { mgrs.mp.notePlaybackStatus(stat); },
     dispatch: function (mgrname, fname, ...args) {
         return mgrs[mgrname][fname].apply(app.svc, args); }
 };  //end of returned functions
