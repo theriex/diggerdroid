@@ -32,20 +32,19 @@ app.svc = (function () {
         seek: function (ms) {
             Android.seek(ms); },
         playSong: function (path) {
-            jt.log("mp.playSong: " + path);
+            jt.log("svc.mp.playSong: " + path);
             try {
                 Android.playSong(path);
             } catch(e) {
                 jt.log("playSong exception: " + e);
-                mgrs.mp.playerFailure("Service crashed");
-            } },
+                mgrs.mp.playerFailure("Service crashed"); } },
         playerFailure: function (err) {
             jt.log("mp.playerFailure: " + err);
             app.player.dispatch("mob", "handlePlayFailure",
                                 "Player error", err); },
         notePlaybackStatus: function (stat) {
-            app.player.dispatch("mob", "notePlaybackStatus",
-                                JSON.parse(stat)) }
+            jt.log("svc.notePlaybackStatus " + JSON.stringify(stat));
+            app.player.dispatch("mob", "notePlaybackStatus", stat); }
     };  //end mgrs.mp returned functions
     }());
 
@@ -84,6 +83,17 @@ app.svc = (function () {
     //song database processing
     mgrs.sg = (function () {
         var dbstatdiv = "topdlgdiv";
+        function verifySongWorkingFields(s) {
+            s.el = s.el || 49;
+            s.al = s.al || 49;
+            s.kws = s.kws || "";
+            s.rv = s.rv || 5;
+            s.fq = s.fq || "N";
+            s.lp = s.lp || "";
+            s.nt = s.nt || "";
+            s.pc = s.pc || 0;
+            s.srcid = s.srcid || "";
+            s.srcrat = s.srcrat || ""; }
     return {
         setArtistFromPath: function (song) {
             const pes = song.path.split("/");
@@ -106,6 +116,7 @@ app.svc = (function () {
                 song.ti = dai.title;
                 song.ar = dai.artist;
                 song.ab = dai.album;
+                verifySongWorkingFields(song);
                 if(!song.ar) {  //artist required for hub sync
                     mgrs.sg.setArtistFromPath(song); } }); },
         parseAudioSummary: function (dais) {

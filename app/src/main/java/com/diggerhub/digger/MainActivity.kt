@@ -33,18 +33,19 @@ import java.io.OutputStream
 class MainActivity : AppCompatActivity() {
     var dais = ""  //Digger Audio Information Summary
 
+    //Need to ask for READ_EXTERNAL_STORAGE interactively each time since it
+    //can be revoked by the user.  Kicked off from requestMediaRead
     val prl = registerForActivityResult(RequestPermission()) { isGranted ->
         var stat = ""
         if(isGranted) {
             fetchMusicData() }
         else {
             stat = "READ_EXTERNAL_STORAGE permission denied." }
-        jsCallback("app.svc.mediaReadComplete($stat)") }
+        djs("app.svc.mediaReadComplete($stat)") }
 
-    val dsi = DiggerServiceInterface(this)
-
-    fun jsCallback(jstxt: String) {
-        Log.d("Digger", "jsCallback: " + jstxt)
+    //digger javascript to run in the webview
+    fun djs(jstxt: String) {
+        //Log.d("Digger", "djs: " + jstxt)
         val dwv: WebView = findViewById(R.id.webview)
         dwv.evaluateJavascript(jstxt, null)
     }
@@ -53,7 +54,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/assets/",
+                            WebViewAssetLoader.AssetsPathHandler(this))
             .build();
         val dwv: WebView = findViewById(R.id.webview)
         dwv.webViewClient = object : WebViewClient() {
@@ -65,11 +67,12 @@ class MainActivity : AppCompatActivity() {
             } }
         dwv.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
-                Log.d("Digger", "${msg.message()} -- From line " +
+                Log.d("Diggerjs", "${msg.message()} -- From line " +
                       "${msg.lineNumber()} of ${msg.sourceId()}")
                 return true } }
         dwv.getSettings().setJavaScriptEnabled(true)
         dwv.addJavascriptInterface(WebAppInterface(this), "Android")
+        Log.d("Digger", "Loading index.html")
         dwv.loadUrl("https://appassets.androidplatform.net/assets/index.html")
     }
 
@@ -132,77 +135,9 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-class DiggerServiceInterface(private val context: MainActivity) {
-    //must start the service first before trying to bind to it, otherwise it
-    //won't continue in the background.
-    var command = ""
-    var param = ""
-    var dur = 0
-    var pos = 0
-    var state = ""    //"playing" or "paused"
-
-    val connection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?,
-                                        binder: IBinder?) {
-            val digbind = binder as DiggerAudioService.DiggerBinder
-            val das = digbind.getService()
-            if(das.mp == null) {
-                dur = 0
-                pos = 0
-                state = "" }
-            else {
-                val mp = das.mp!!
-                when(command) {
-                    "pause" -> mp.pause()
-                    "resume" -> mp.start()
-                    "seek" -> mp.seekTo(param.toInt()) }
-                dur = mp.getDuration()
-                pos = mp.getCurrentPosition()
-                if(mp.isPlaying()) {
-                    state = "playing" }
-                else {
-                    state = "paused" } }
-        }
-        override fun onServiceDisconnected(name: ComponentName?) {
-            Log.d("Digger", "ServiceInterface disconnected")
-        }
-    }
-
-    fun cname() : ComponentName {
-        return ComponentName(context,
-                             "com.diggerhub.digger.DiggerAudioService")
-    }
-
-    fun svcexec(svccommand:String, svcparam:String) {
-        command = svccommand
-        param = svcparam
-        val exi = Intent("android.media.browse.MediaBrowserService")
-        exi.setComponent(cname())
-        //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
-        val flags = 0
-        context.bindService(exi, connection, flags)
-        context.unbindService(connection)
-        val json = "{\"state\":\"$state\",\"pos\":$pos,\"dur\":$dur}"
-        val callback = "app.svc.notePlaybackStatus($json)"
-        context.jsCallback(callback)
-    }
-
-
-    fun playSong(path: String) {
-        //launch DiggerAudioService via manifest intent-filter
-        val exi = Intent("android.media.browse.MediaBrowserService",
-                         Uri.fromFile(File(path)))
-        exi.setComponent(cname())
-        try {  //if service already running, onStartCommand is called directly
-            context.startService(exi)
-        } catch(e: Exception) {
-            //can't jsCallback because still executing failed call
-            Log.e("Digger", "playSong failed", e) }
-    }
-}
-
 
 class WebAppInterface(private val context: MainActivity) {
+    val asi = AudioServiceInterface(context)
     fun readFile(file: File) : String {
         file.createNewFile()  //create a new empty file if no file exists
         val inputStream: InputStream = file.inputStream()
@@ -238,25 +173,96 @@ class WebAppInterface(private val context: MainActivity) {
     }
     @JavascriptInterface
     fun playSong(path: String) {
-        context.dsi.playSong(path)
+        asi.playSong(path)
     }
     @JavascriptInterface
     fun requestStatusUpdate() {
-        context.dsi.svcexec("status", "")
+        asi.svcexec("status", "")
     }
     @JavascriptInterface
     fun pause() {
-        context.dsi.svcexec("pause", "")
+        asi.svcexec("pause", "")
     }
     @JavascriptInterface
     fun resume() {
-        context.dsi.svcexec("resume", "")
+        asi.svcexec("resume", "")
     }
     @JavascriptInterface
     fun seek(ms: Int) {
-        context.dsi.svcexec("resume", ms.toString())
+        asi.svcexec("seek", ms.toString())
     }
 }
+
+
+class AudioServiceInterface(private val context: MainActivity) {
+    //must start the service first before trying to bind to it, otherwise it
+    //won't continue in the background.
+    val dcn = ComponentName(context, "com.diggerhub.digger.DiggerAudioService")
+    var command = ""
+    var param = ""
+    var dur = 0
+    var pos = 0
+    var state = ""    //"playing" or "paused"
+
+    val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?,
+                                        binder: IBinder?) {
+            val digbind = binder as DiggerAudioService.DiggerBinder
+            val das = digbind.getService()
+            if(das.mp == null) {
+                dur = 0
+                pos = 0
+                state = "" }
+            else {
+                val mp = das.mp!!
+                when(command) {
+                    "pause" -> mp.pause()
+                    "resume" -> mp.start()
+                    "seek" -> mp.seekTo(param.toInt()) }
+                dur = mp.getDuration()
+                pos = mp.getCurrentPosition()
+                if(mp.isPlaying()) {
+                    state = "playing" }
+                else {
+                    state = "paused" } }
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            Log.d("Digger", "ServiceInterface disconnected")
+        }
+    }
+
+    fun svcexec(svccommand:String, svcparam:String) {
+        command = svccommand
+        param = svcparam
+        val exi = Intent("android.media.browse.MediaBrowserService")
+        exi.setComponent(dcn)
+        //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
+        val flags = 0
+        val bound = context.bindService(exi, connection, flags)
+        context.unbindService(connection)  //always unbind even binding failed
+        if(bound) {
+            //Log.d("DiggerASI", "bind service succeeded")
+            val statobj = "{state:\"$state\", pos:$pos, dur:$dur}"
+            val callback = "app.svc.notePlaybackStatus($statobj)"
+            context.runOnUiThread(Runnable { context.djs(callback) }) }
+        else {
+            Log.d("DiggerASI", "could not bind to service") }
+    }
+
+    fun playSong(path: String) {
+        Log.d("DiggerASI", "playSong " + path)
+        //launch DiggerAudioService via manifest intent-filter
+        val exi = Intent("android.media.browse.MediaBrowserService",
+                         Uri.fromFile(File(path)))
+        exi.setComponent(dcn)
+        try {  //if service already running, onStartCommand is called directly
+            context.startService(exi)
+        } catch(e: Exception) {
+            //can't djs because still executing failed call
+            Log.e("Digger", "playSong failed", e) }
+    }
+}
+
 
 class DiggerAudioService : MediaBrowserServiceCompat(),
                     MediaPlayer.OnPreparedListener,
@@ -273,10 +279,10 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        Log.d("Digger", "onStartCommand called")
         //intent.action is declared in manifest and used by startService
         if(intent != null) {  //might be null if restarted after being killed
             val pathuri = intent.data!!  //force Uri? to Uri
+            Log.d("DiggerAS", "onStartCommand pathuri: " + pathuri)
             val context = getApplicationContext()
             mp?.release()  //clean up any previously existing instance
             mp = MediaPlayer().apply {
@@ -285,6 +291,8 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
                 setOnPreparedListener(this@DiggerAudioService)
                 setOnErrorListener(this@DiggerAudioService)
                 prepareAsync() } }  //release main thread
+        else {
+            Log.d("DiggerAS", "onStartCommand null intent (restart)") }
         return android.app.Service.START_STICKY
     }
 
