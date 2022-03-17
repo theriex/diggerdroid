@@ -227,7 +227,7 @@ class AudioServiceInterface(private val context: MainActivity) {
                 dur = mp.getDuration()
                 pos = mp.getCurrentPosition()
                 if(state.isNullOrEmpty()) {
-                    Log.d("DiggerASI", "retrieving state from mp.isPlaying")
+                    //Log.d("DiggerASI", "retrieving state from mp.isPlaying")
                     if(mp.isPlaying()) {
                         state = "playing" }
                     else {
@@ -264,6 +264,7 @@ class AudioServiceInterface(private val context: MainActivity) {
         exi.setComponent(dcn)
         try {  //if service already running, onStartCommand is called directly
             context.startService(exi)
+            state = "playing"
         } catch(e: Exception) {
             //can't djs because still executing failed call
             Log.e("Digger", "playSong failed", e) }
