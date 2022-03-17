@@ -209,22 +209,29 @@ class AudioServiceInterface(private val context: MainActivity) {
                                         binder: IBinder?) {
             val digbind = binder as DiggerAudioService.DiggerBinder
             val das = digbind.getService()
+            state = ""  //always recheck state
             if(das.mp == null) {
                 dur = 0
-                pos = 0
-                state = "" }
+                pos = 0 }
             else {
                 val mp = das.mp!!
+                Log.d("DiggerASI", "onServiceConnected " + command)
                 when(command) {
-                    "pause" -> mp.pause()
-                    "resume" -> mp.start()
+                    "pause" -> {
+                        state = "paused"
+                        mp.pause() }
+                    "resume" -> {
+                        state = "playing"
+                        mp.start() }
                     "seek" -> mp.seekTo(param.toInt()) }
                 dur = mp.getDuration()
                 pos = mp.getCurrentPosition()
-                if(mp.isPlaying()) {
-                    state = "playing" }
-                else {
-                    state = "paused" } }
+                if(state.isNullOrEmpty()) {
+                    Log.d("DiggerASI", "retrieving state from mp.isPlaying")
+                    if(mp.isPlaying()) {
+                        state = "playing" }
+                    else {
+                        state = "paused" } } }
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             Log.d("Digger", "ServiceInterface disconnected")
