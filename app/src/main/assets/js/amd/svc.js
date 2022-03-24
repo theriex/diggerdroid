@@ -20,19 +20,30 @@ app.svc = (function () {
     var mgrs = {};  //general container for managers
 
 
+    //Media Playback manager handles transport and playback calls
     mgrs.mp = (function () {
+        var rqn = 0;
+        var cq = [];
+        function processNextCommand () {
+            //result delivered in notePlaybackStatus callback
+            Android.serviceInteraction(cq[0].cmd, cq[0].param, cq[0].cc); }
+        function queueCommand (command, parameter) {
+            if(cq.length && cq[cq.length - 1].cmd === command) {
+                return jt.log("svc.mp.queueCommand " + command +
+                              " already queued for processing."); }
+            rqn += 1;
+            jt.log("svc.mp.queueCommand " + rqn + ": " + command);
+            cq.push({cmd:command, param:parameter || "", cc:rqn});
+            if(cq.length === 1) {  //no other ongoing processing
+                processNextCommand(); } }
     return {
-        requestStatusUpdate: function (/*contf*/) {
-            //Get playback info and call player.mob.notePlaybackStatus
-            Android.requestStatusUpdate(); },
-        pause: function () {
-            Android.pause(); },
-        resume: function () {
-            Android.resume(); },
-        seek: function (ms) {
-            Android.seek(ms); },
+        requestStatusUpdate: function (/*contf*/) { queueCommand("status"); },
+        pause: function () { queueCommand("pause"); },
+        resume: function () { queueCommand("resume"); },
+        seek: function (ms) { queueCommand("seek", String(ms)); },
         playSong: function (path) {
             jt.log("svc.mp.playSong: " + path);
+            cq = [];  //clear all previous pending transport/status requests
             try {
                 Android.playSong(path);
             } catch(e) {
@@ -43,8 +54,21 @@ app.svc = (function () {
             app.player.dispatch("mob", "handlePlayFailure",
                                 "Player error", err); },
         notePlaybackStatus: function (stat) {
-            jt.log("svc.notePlaybackStatus " + JSON.stringify(stat));
-            app.player.dispatch("mob", "notePlaybackStatus", stat); }
+            if(!cq.length) {
+                return jt.log("svc.mp.notePlaybackStatus cq empty"); }
+            if(!stat.state) {  //indeterminate result, retry
+                setTimeout(processNextCommand, 200);
+                return jt.log("svc.mp.notePlaybackStatus retrying..."); }
+            jt.log("svc.mp.notePlaybackStatus " + JSON.stringify(stat));
+            app.player.dispatch("mob", "notePlaybackStatus", stat);
+            stat.song = app.player.song();
+            Android.noteState("player", JSON.stringify(stat));
+            Android.noteState("deck", JSON.stringify(app.deck.getState()));
+            const processed = cq.shift();
+            jt.log("svc.mp.notePlaybackStatus finished " + processed.cc +
+                   ": " + processed.cmd);
+            if(cq.length) {
+                processNextCommand(); } }
     };  //end mgrs.mp returned functions
     }());
 
@@ -186,8 +210,8 @@ app.svc = (function () {
             setTimeout(function () { contf(config.acctsinfo); }, 50); },
         getDatabase: function () { return dbo; },
         songs: function () { return dbo.songs; },
-        fetchSongs: function (contf/*, errf*/) {  //let init proc finish
-            setTimeout(function () { contf(dbo.songs); }, 200); },
+        fetchSongs: function (contf/*, errf*/) {  //call stack as if web call
+            setTimeout(function () { contf(dbo.songs); }, 50); },
         fetchAlbum: function (song, contf/*, errf*/) {
             var lsi = song.path.lastIndexOf("/");  //last separator index
             const pp = song.path.slice(0, lsi + 1);  //path prefix
@@ -207,7 +231,20 @@ app.svc = (function () {
             app.top.dispatch("a2h", "syncToHub");  //sched sync
             if(contf) {
                 contf(dbo.songs[song.path]); } },
+        restoreState: function () {
+            var state = Android.getRestoreState("player");
+            if(state) {
+                jt.log("restoreState player: " + state);
+                app.player.setState(JSON.parse(state)); }
+            state = Android.getRestoreState("deck");
+            if(state) {
+                jt.log("restoreState deck: " + state);
+                app.deck.setState(JSON.parse(state)); } },
         loadInitialData: function () {
+            //background fails to load. Set explicitely so things are visible:
+            const cssbg = "url('" + app.dr("/img/panelsbg.png") + "')";
+            jt.byId("contentdiv").style.backgroundImage = cssbg;
+            mgrs.loc.restoreState();
             try {
                 config = JSON.parse(Android.readConfig() || "{}");
                 dbo = JSON.parse(Android.readDigDat() || "{}"); }
@@ -216,9 +253,6 @@ app.svc = (function () {
             config = mgrs.usr.verifyConfig(config);
             dbo = mgrs.sg.verifyDatabase(dbo);
             jt.log("dbs " + Object.keys(dbo.songs));
-            //background fails to load. Set explicitely so things are visible:
-            const cssbg = "url('" + app.dr("/img/panelsbg.png") + "')";
-            jt.byId("contentdiv").style.backgroundImage = cssbg;
             //let rest of app know data is ready, then check the library:
             const uims = ["top",      //display login name
                           "filter"];  //show settings, app.deck.update
@@ -267,7 +301,8 @@ app.svc = (function () {
                     song[fld] = updsong[fld]; } }); },
         updateMultipleSongs: function (/*updss, contf, errf*/) {
             jt.err("svc.gen.updateMultipleSongs is web only"); },
-        initialize: function () { setTimeout(mgrs.loc.loadInitialData, 200); }
+        initialize: function () {  //don't block init of rest of modules
+            setTimeout(mgrs.loc.loadInitialData, 50); }
     };  //end mgrs.gen returned functions
     }());
 

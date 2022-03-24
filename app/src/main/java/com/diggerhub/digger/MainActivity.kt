@@ -2,7 +2,6 @@ package com.diggerhub.digger
 
 import android.Manifest.permission.READ_EXTERNAL_STORAGE
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.database.Cursor
@@ -17,8 +16,6 @@ import android.provider.MediaStore
 import android.support.v4.media.MediaBrowserCompat.MediaItem
 import android.util.Log
 import android.webkit.*
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
@@ -27,11 +24,11 @@ import androidx.media.MediaBrowserServiceCompat
 import androidx.webkit.WebViewAssetLoader
 import java.io.File
 import java.io.InputStream
-import java.io.OutputStream
 
 
 class MainActivity : AppCompatActivity() {
     var dais = ""  //Digger Audio Information Summary
+    val stateInfo = Bundle()  //player and deck state info for view rebuild
 
     //Need to ask for READ_EXTERNAL_STORAGE interactively each time since it
     //can be revoked by the user.  Kicked off from requestMediaRead
@@ -50,20 +47,23 @@ class MainActivity : AppCompatActivity() {
         dwv.evaluateJavascript(jstxt, null)
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate(inState: Bundle?) {
+        super.onCreate(inState)
+        inState?.run {
+            stateInfo.putString("player", inState.getString("player", ""))
+            stateInfo.putString("deck", inState.getString("deck", "")) }
         setContentView(R.layout.activity_main)
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/",
                             WebViewAssetLoader.AssetsPathHandler(this))
-            .build();
+            .build()
         val dwv: WebView = findViewById(R.id.webview)
         dwv.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
-                return assetLoader.shouldInterceptRequest(request.url);
+                return assetLoader.shouldInterceptRequest(request.url)
             } }
         dwv.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
@@ -76,13 +76,20 @@ class MainActivity : AppCompatActivity() {
         dwv.loadUrl("https://appassets.androidplatform.net/assets/index.html")
     }
 
-    fun jsonAV(attr: String, txt: String) : String {
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState?.run {
+            putString("player", stateInfo.getString("player", ""))
+            putString("deck", stateInfo.getString("deck", "")) }
+        super.onSaveInstanceState(outState)  //save parent view hierarchy
+    }
+
+    private fun jsonAV(attr: String, txt: String) : String {
         val nobs = txt.replace("\\", "\\\\")
         val noq = nobs.replace("\"", "\\\"")
         return "\"$attr\": \"$noq\""
     }
 
-    fun cstrval(cursor: Cursor, idx:Int) : String {
+    private fun cstrval(cursor: Cursor, idx:Int) : String {
         val type = cursor.getType(idx)
         if(type == Cursor.FIELD_TYPE_NULL) {
             return "" }
@@ -91,16 +98,16 @@ class MainActivity : AppCompatActivity() {
         return cursor.getString(idx)
     }
 
-    fun queryAudio(fields:Map<String, String>) {
+    private fun queryAudio(fields:Map<String, String>) {
         val jsonsb = StringBuilder()
-        val select = MediaStore.Audio.Media.IS_MUSIC + " != 0";
+        val select = MediaStore.Audio.Media.IS_MUSIC + " != 0"
         val cols = fields.values.toTypedArray()
         contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             cols, select, null, null
         )?.use { cursor ->
             while(cursor.moveToNext()) {
-                if(jsonsb.length > 0) {
+                if(jsonsb.isNotEmpty()) {
                     jsonsb.append(",")}
                 jsonsb.append("{")
                 fields.keys.forEachIndexed { idx, key ->
@@ -111,7 +118,7 @@ class MainActivity : AppCompatActivity() {
         dais = "[" + jsonsb.toString() + "]"
     }
 
-    fun fetchMusicData() {
+    private fun fetchMusicData() {
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             queryAudio(mapOf(
                 "title" to MediaStore.Audio.Media.TITLE,
@@ -137,14 +144,14 @@ class MainActivity : AppCompatActivity() {
 
 
 class WebAppInterface(private val context: MainActivity) {
-    val asi = AudioServiceInterface(context)
-    fun readFile(file: File) : String {
+    private val asi = AudioServiceInterface(context)
+    private fun readFile(file: File) : String {
         file.createNewFile()  //create a new empty file if no file exists
         val inputStream: InputStream = file.inputStream()
         val text = inputStream.bufferedReader().use { it.readText() }
         return text
     }
-    fun writeFile(file: File, txt:String) {
+    private fun writeFile(file: File, txt:String) {
         file.writeText(txt)
     }
     @JavascriptInterface
@@ -176,20 +183,16 @@ class WebAppInterface(private val context: MainActivity) {
         asi.playSong(path)
     }
     @JavascriptInterface
-    fun requestStatusUpdate() {
-        asi.svcexec("status", "")
+    fun serviceInteraction(cmd: String, param: String, cnum: Int) {
+        asi.svcexec(cmd, param, cnum)
     }
     @JavascriptInterface
-    fun pause() {
-        asi.svcexec("pause", "")
+    fun noteState(key: String, det: String) {
+        context.stateInfo.putString(key, det)
     }
     @JavascriptInterface
-    fun resume() {
-        asi.svcexec("resume", "")
-    }
-    @JavascriptInterface
-    fun seek(ms: Int) {
-        asi.svcexec("seek", ms.toString())
+    fun getRestoreState(key: String) : String {
+        return context.stateInfo.getString(key, "")
     }
 }
 
@@ -200,60 +203,70 @@ class AudioServiceInterface(private val context: MainActivity) {
     val dcn = ComponentName(context, "com.diggerhub.digger.DiggerAudioService")
     var command = ""
     var param = ""
+    var reqnum = 0
     var dur = 0
     var pos = 0
     var state = ""    //"playing" or "paused"
+    var commok = false
 
     val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?,
                                         binder: IBinder?) {
+            commok = true
+            //Log.d("DiggerASI", "ServiceConnection connected")
             val digbind = binder as DiggerAudioService.DiggerBinder
             val das = digbind.getService()
             state = ""  //always recheck state
             if(das.mp == null) {
                 dur = 0
                 pos = 0 }
-            else {
+            else {  //have media player
                 val mp = das.mp!!
-                Log.d("DiggerASI", "onServiceConnected " + command)
                 when(command) {
                     "pause" -> {
+                        //Log.d("DiggerASI", "state set to paused")
                         state = "paused"
                         mp.pause() }
-                    "resume" -> {
-                        state = "playing"
-                        mp.start() }
-                    "seek" -> mp.seekTo(param.toInt()) }
+                   "resume" -> {
+                       //Log.d("DiggerASI", "state set to playing")
+                       state = "playing"
+                       mp.start() }
+                   "seek" -> mp.seekTo(param.toInt()) }
                 dur = mp.getDuration()
                 pos = mp.getCurrentPosition()
-                if(state.isNullOrEmpty()) {
-                    //Log.d("DiggerASI", "retrieving state from mp.isPlaying")
+                if(state.isEmpty()) {
+                    Log.d("DiggerASI", "retrieving state from mp.isPlaying")
                     if(mp.isPlaying()) {
                         state = "playing" }
                     else {
                         state = "paused" } } }
         }
         override fun onServiceDisconnected(name: ComponentName?) {
-            Log.d("Digger", "ServiceInterface disconnected")
-        }
-    }
+            Log.d("Digger", "ServiceConnection disconnected")
+        } }
 
-    fun svcexec(svccommand:String, svcparam:String) {
+
+    fun svcexec(svccommand:String, svcparam:String, callnum:Int) {
+        //Log.d("DiggerASI", "svcexec " + svccommand)
         command = svccommand
         param = svcparam
+        reqnum = callnum
         val exi = Intent("android.media.browse.MediaBrowserService")
         exi.setComponent(dcn)
         //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
         val flags = 0
-        val bound = context.bindService(exi, connection, flags)
-        context.unbindService(connection)  //always unbind even binding failed
-        if(bound) {
-            //Log.d("DiggerASI", "bind service succeeded")
-            val statobj = "{state:\"$state\", pos:$pos, dur:$dur}"
-            val callback = "app.svc.notePlaybackStatus($statobj)"
-            context.runOnUiThread(Runnable { context.djs(callback) }) }
-        else {
-            Log.d("DiggerASI", "could not bind to service") }
+        val bindok = context.bindService(exi, connection, flags)
+        context.unbindService(connection)  //always unbind even if bind failed
+        if(!bindok) {
+            Log.d("DiggerASI", "could not bind to service")
+            state = ""; }  //return indeterminate state, caller can retry
+        if(!commok) {
+            //Log.d("DiggerASI", "binding service did not connect")
+            state = ""; }  //return indeterminate state so caller can retry
+        commok = false  //reset for next call
+        val statobj = "{state:\"$state\", pos:$pos, dur:$dur, cc:$reqnum}"
+        val callback = "app.svc.notePlaybackStatus($statobj)"
+        context.runOnUiThread(Runnable() { context.djs(callback) })
     }
 
     fun playSong(path: String) {
@@ -294,7 +307,7 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
             val context = getApplicationContext()
             mp?.release()  //clean up any previously existing instance
             mp = MediaPlayer().apply {
-                setDataSource(context, pathuri);
+                setDataSource(context, pathuri)
                 setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
                 setOnPreparedListener(this@DiggerAudioService)
                 setOnErrorListener(this@DiggerAudioService)
