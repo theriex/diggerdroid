@@ -63,7 +63,7 @@ app.svc = (function () {
             app.player.dispatch("mob", "notePlaybackStatus", stat);
             stat.song = app.player.song();
             Android.noteState("player", JSON.stringify(stat));
-            Android.noteState("deck", JSON.stringify(app.deck.getState()));
+            mgrs.loc.noteUpdatedState("deck");
             const processed = cq.shift();
             jt.log("svc.mp.notePlaybackStatus finished " + processed.cc +
                    ": " + processed.cmd);
@@ -231,6 +231,10 @@ app.svc = (function () {
             app.top.dispatch("a2h", "syncToHub");  //sched sync
             if(contf) {
                 contf(dbo.songs[song.path]); } },
+        noteUpdatedState: function (label) {
+            if(label === "deck") {
+                Android.noteState("deck",
+                                  JSON.stringify(app.deck.getState())); } },
         restoreState: function () {
             var state = Android.getRestoreState("player");
             if(state) {
@@ -315,6 +319,7 @@ return {
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
     updateSong: function (song, contf) { mgrs.loc.updateSong(song, contf); },
     authdata: function (obj) { return mgrs.gen.authdata(obj); },
+    noteUpdatedState: function (label) { mgrs.loc.noteUpdatedState(label); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     playerFailure: function (err) { mgrs.mp.playerFailure(err); },
     notePlaybackStatus: function (stat) { mgrs.mp.notePlaybackStatus(stat); },
