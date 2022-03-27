@@ -37,7 +37,9 @@ app.svc = (function () {
             if(cq.length === 1) {  //no other ongoing processing
                 processNextCommand(); } }
     return {
-        requestStatusUpdate: function (/*contf*/) { queueCommand("status"); },
+        requestStatusUpdate: function (/*contf*/) {
+            var dst = app.deck.getState(200);  //6+ hrs worth
+            queueCommand("status", JSON.stringify(dst)); },
         pause: function () { queueCommand("pause"); },
         resume: function () { queueCommand("resume"); },
         seek: function (ms) { queueCommand("seek", String(ms)); },

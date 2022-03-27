@@ -24,7 +24,9 @@ import androidx.media.MediaBrowserServiceCompat
 import androidx.webkit.WebViewAssetLoader
 import java.io.File
 import java.io.InputStream
-
+import java.text.SimpleDateFormat 
+import java.util.Date
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     var dais = ""  //Digger Audio Information Summary
@@ -223,6 +225,8 @@ class AudioServiceInterface(private val context: MainActivity) {
             else {  //have media player
                 val mp = das.mp!!
                 when(command) {
+                    "status" -> {
+                        das.dst = param }
                     "pause" -> {
                         //Log.d("DiggerASI", "state set to paused")
                         state = "paused"
@@ -231,9 +235,13 @@ class AudioServiceInterface(private val context: MainActivity) {
                        //Log.d("DiggerASI", "state set to playing")
                        state = "playing"
                        mp.start() }
-                   "seek" -> mp.seekTo(param.toInt()) }
+                   "seek" -> mp.seekTo(param.toInt())
+                   else -> {
+                       Log.d("DiggerASI", "unknown command " + command) } }
                 dur = mp.getDuration()
                 pos = mp.getCurrentPosition()
+                if(dur - pos <= 4000) {  //if 4 secs or less from end
+                    das.dst = "" }       //turn off service autoplay
                 if(state.isEmpty()) {
                     Log.d("DiggerASI", "retrieving state from mp.isPlaying")
                     if(mp.isPlaying()) {
@@ -287,8 +295,71 @@ class AudioServiceInterface(private val context: MainActivity) {
 
 class DiggerAudioService : MediaBrowserServiceCompat(),
                     MediaPlayer.OnPreparedListener,
-                    MediaPlayer.OnErrorListener {
+                    MediaPlayer.OnErrorListener,
+                    MediaPlayer.OnCompletionListener {
     var mp: MediaPlayer? = null
+    var dst = ""   //most recently received Digger deck state
+
+    fun isostamp() : String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+        return sdf.format(Date())
+    }
+
+    fun playSong(pathuri: Uri) {
+        val context = getApplicationContext()
+        mp?.release()  //clean up any previously existing instance
+        mp = MediaPlayer().apply {
+            setDataSource(context, pathuri)
+            setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+            setOnPreparedListener(this@DiggerAudioService)
+            setOnErrorListener(this@DiggerAudioService)
+            setOnCompletionListener(this@DiggerAudioService)
+            prepareAsync() }  //release calling thread
+    }
+
+    fun getNextSongPathFromState() : String {
+        val dso = JSONObject(dst)
+        val disp = dso.getString("disp")
+        if(disp == "album") {
+            val det = dso.getJSONObject("det")
+            val info = det.getJSONObject("info")
+            var ci = info.getInt("ci")
+            ci += 1
+            val songs = info.getJSONArray("songs")
+            if(ci < songs.length()) {
+                val song = songs.getJSONObject(ci)
+                val path = song.getString("path")
+                info.put("ci", ci)
+                det.put("info", info)
+                dso.put("det", det)
+                dst = dso.toString()
+                return path }
+            return "" }
+        val det = dso.getJSONArray("det")
+        if(det.length() == 0) {
+            return "" }
+        val song = det.remove(0) as JSONObject
+        val path = song.getString("path")
+        dso.put("det", det)
+        dst = dso.toString()
+        return path
+    }
+
+    //should not collide with paused/stopped activity thread since autoplaying
+    fun noteSongPlayed(path: String) {
+        val ddf = File(getApplicationContext().filesDir, "digdat.json")
+        val inputStream: InputStream = ddf.inputStream()
+        val text = inputStream.bufferedReader().use { it.readText() }
+        val dat = JSONObject(text)
+        val songs = dat.getJSONObject("songs")
+        val song = songs.getJSONObject(path)
+        val pc = song.optInt("pc", 0)
+        song.put("pc", pc + 1)
+        song.put("lp", isostamp())
+        songs.put(path, song)
+        dat.put("songs", song)
+        ddf.writeText(dat.toString())
+    }
 
     val binder = DiggerBinder()
     inner class DiggerBinder: Binder() {
@@ -304,21 +375,11 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
         if(intent != null) {  //might be null if restarted after being killed
             val pathuri = intent.data!!  //force Uri? to Uri
             Log.d("DiggerAS", "onStartCommand pathuri: " + pathuri)
-            val context = getApplicationContext()
-            mp?.release()  //clean up any previously existing instance
-            mp = MediaPlayer().apply {
-                setDataSource(context, pathuri)
-                setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
-                setOnPreparedListener(this@DiggerAudioService)
-                setOnErrorListener(this@DiggerAudioService)
-                prepareAsync() } }  //release main thread
+            dst = ""  //clear any previously saved deck state
+            playSong(pathuri) }
         else {
             Log.d("DiggerAS", "onStartCommand null intent (restart)") }
         return android.app.Service.START_STICKY
-    }
-
-    override fun onPrepared(mediaPlayer: MediaPlayer) {
-        mp?.start()  //question mark is from doc example. Probably right.
     }
 
     override fun onDestroy() {
@@ -326,7 +387,12 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
         mp?.release()
     }
 
-    override fun onError(mp: MediaPlayer, what: Int, extra: Int): Boolean {
+    ////media player listener interface
+    override fun onPrepared(mediaPlayer: MediaPlayer) {
+        mp?.start()  //question mark is from doc example. Probably right.
+    }
+
+    override fun onError(ignore: MediaPlayer, what: Int, extra: Int): Boolean {
         val stat = when(what) {
             MediaPlayer.MEDIA_ERROR_SERVER_DIED -> "Server died"
             else -> "Unknown" }
@@ -341,7 +407,18 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
         return false  //triggers call to OnCompletionListener
     }
 
-    /* Required overrides for media content access */
+    override fun onCompletion(ignore: MediaPlayer) {
+        //background Digger continues to next song, so this should only get
+        //called if the activity was killed while the service continues.
+        if(!dst.isEmpty()) {  //have state info, start autoplay
+            Log.d("DiggerAudioService", "onCompletion autoplay " + isostamp())
+            val path = getNextSongPathFromState()
+            if(!path.isEmpty()) {  //have next song to play
+                noteSongPlayed(path)
+                playSong(Uri.fromFile(File(path))) } }
+    }
+
+    ////Required overrides for media content access
     override fun onGetRoot(@NonNull clientPackageName: String, clientUid: Int,
                            @Nullable rootHints: Bundle?) : BrowserRoot? {
         return null
