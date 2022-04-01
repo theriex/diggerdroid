@@ -196,6 +196,45 @@ app.svc = (function () {
     }());
 
 
+    //hub communications manager handles async hub requests/callbacks
+    mgrs.hc = (function () {
+        var rqs = {};  //request queues by queue name
+        var reqnum = 1;
+        function startRequest (entry) {
+            entry.dat = entry.dat || "";
+            jt.log("mgrs.hc " + JSON.stringify(entry));
+            Android.hubRequest(entry.qn, entry.rn,
+                               entry.ep, entry.v, entry.dat);
+        }
+    return {
+        queueRequest: function (qname, endpoint, verb, data, contf, errf) {
+            contf = contf || function (res) {
+                jt.log("svc.hc.queueRequest contf " + JSON.stringify(res)); };
+            errf = errf || function (code, text) {
+                jt.log("svc.hc.queueRequest errf " + code + ": " + text); };
+            const entry = {qn:qname, ep:endpoint, v:verb, dat:data,
+                           cf:contf, ef:errf, rn:reqnum};
+            reqnum += 1;
+            if(rqs[qname]) {  //existing request(s) pending
+                rqs.push(entry); }  //process in turn
+            else {  //queueing a new request
+                rqs[qname] = [entry];
+                startRequest(entry); } },
+        hubResponse: function (qname, reqnum, code, det) {
+            if(reqnum !== rqs[qname][0].rn) {
+                return jt.log("ignoring bad request return " + qname + " " +
+                              reqnum + " (" + rqs[qname][0].rn + " expected" +
+                              ") code: " + code + ", det: " + det); }
+            const entry = rqs[qname].shift();
+            if(!rqs[qname].length) { delete rqs[qname]; }
+            if(code === 200) {
+                entry.cf(JSON.parse(det)); }
+            else {
+                entry.ef(code, det); } }
+    };  //end mgrs.hc returned functions
+    }());
+
+
     //Local manager handles local environment interaction
     mgrs.loc = (function () {
         var config = null;
@@ -271,10 +310,13 @@ app.svc = (function () {
             jt.log("svc.loc.noteUpdatedSongData not implemented yet"); },
         updateHubAccount: function (/*contf, errf*/) {
             jt.log("svc.loc.updateHubAccount not implemented yet"); },
-        signInOrJoin: function (/*endpoint, data, contf, errf*/) {
-            jt.log("svc.loc.signInOrJoin not implemented yet"); },
-        emailPwdReset: function (/*data, contf, errf*/) {
-            jt.log("svc.loc.emailPwdReset not implemented yet"); }
+        signInOrJoin: function (endpoint, data, contf, errf) {
+            //endpoint to call is either /newacct or /acctok
+            mgrs.hc.queueRequest("signInOrJoin", "/" + endpoint, "POST", data,
+                                 contf, errf); },
+        emailPwdReset: function (data, contf, errf) {
+            mgrs.hc.queueRequest("emailPwdReset", app.cb("/mailpwr", data),
+                                 "GET", null, contf, errf); }
     };  //end mgrs.loc returned functions
     }());
 
@@ -325,6 +367,7 @@ return {
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     playerFailure: function (err) { mgrs.mp.playerFailure(err); },
     notePlaybackStatus: function (stat) { mgrs.mp.notePlaybackStatus(stat); },
+    hubReqRes: function (q, r, c, d) { mgrs.hc.hubResponse(q, r, c, d); },
     dispatch: function (mgrname, fname, ...args) {
         return mgrs[mgrname][fname].apply(app.svc, args); }
 };  //end of returned functions

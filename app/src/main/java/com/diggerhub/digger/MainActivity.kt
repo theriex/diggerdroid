@@ -24,13 +24,18 @@ import androidx.media.MediaBrowserServiceCompat
 import androidx.webkit.WebViewAssetLoader
 import java.io.File
 import java.io.InputStream
-import java.text.SimpleDateFormat 
+import java.net.URL
+import java.net.HttpURLConnection
+import java.text.SimpleDateFormat
+import java.util.concurrent.Executors
+import java.util.concurrent.ExecutorService
 import java.util.Date
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     var dais = ""  //Digger Audio Information Summary
     val stateInfo = Bundle()  //player and deck state info for view rebuild
+    val execsvc: ExecutorService = Executors.newFixedThreadPool(2)
 
     //Need to ask for READ_EXTERNAL_STORAGE interactively each time since it
     //can be revoked by the user.  Kicked off from requestMediaRead
@@ -46,12 +51,16 @@ class MainActivity : AppCompatActivity() {
     fun djs(jstxt: String) {
         //Log.d("Digger", "djs: " + jstxt)
         val dwv: WebView = findViewById(R.id.webview)
-        dwv.evaluateJavascript(jstxt, null)
+        try {
+            dwv.evaluateJavascript(jstxt, null)
+        } catch(e: Exception) {
+            Log.e("Digger", "eval js failed", e)
+        }
     }
 
     override fun onCreate(inState: Bundle?) {
         super.onCreate(inState)
-        inState?.run {
+        inState?.run {  //restore state information if given
             stateInfo.putString("player", inState.getString("player", ""))
             stateInfo.putString("deck", inState.getString("deck", "")) }
         setContentView(R.layout.activity_main)
@@ -73,7 +82,7 @@ class MainActivity : AppCompatActivity() {
                       "${msg.lineNumber()} of ${msg.sourceId()}")
                 return true } }
         dwv.getSettings().setJavaScriptEnabled(true)
-        dwv.addJavascriptInterface(WebAppInterface(this), "Android")
+        dwv.addJavascriptInterface(DiggerAppInterface(this), "Android")
         Log.d("Digger", "Loading index.html")
         dwv.loadUrl("https://appassets.androidplatform.net/assets/index.html")
     }
@@ -145,8 +154,8 @@ class MainActivity : AppCompatActivity() {
 }
 
 
-class WebAppInterface(private val context: MainActivity) {
-    private val asi = AudioServiceInterface(context)
+class DiggerAppInterface(private val context: MainActivity) {
+    private val asi = DiggerAudioServiceInterface(context)
     private fun readFile(file: File) : String {
         file.createNewFile()  //create a new empty file if no file exists
         val inputStream: InputStream = file.inputStream()
@@ -196,10 +205,21 @@ class WebAppInterface(private val context: MainActivity) {
     fun getRestoreState(key: String) : String {
         return context.stateInfo.getString(key, "")
     }
+    @JavascriptInterface
+    fun hubRequest(qname: String, reqnum: Int,
+                   endpoint: String, verb: String, data: String) {
+        try {
+            val callinfo = HubWebRequest(context, qname, reqnum,
+                                         endpoint, verb, data)
+                context.execsvc.execute(callinfo)
+        } catch(e: Exception) {
+            Log.e("DiggerAppInterface", "Web request failed", e)
+        }
+    }
 }
 
 
-class AudioServiceInterface(private val context: MainActivity) {
+class DiggerAudioServiceInterface(private val context: MainActivity) {
     //must start the service first before trying to bind to it, otherwise it
     //won't continue in the background.
     val dcn = ComponentName(context, "com.diggerhub.digger.DiggerAudioService")
@@ -427,5 +447,46 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
                                 @NonNull result: Result<MutableList<MediaItem>>
                                 ): Unit {
         result.sendResult(mutableListOf<MediaItem>())
+    }
+}
+
+
+class HubWebRequest(private val context: MainActivity,
+                    private val qname: String,
+                    private val reqnum: Int,
+                    private val endpoint: String,
+                    private val verb: String,
+                    private val data: String) : Runnable {
+    override fun run() {
+        val dhup = "https://diggerhub.com/api"
+        var code = 503  //Service Unavailable
+        var res = "Connection failed"
+        try {
+            Log.d("DiggerHub", "$qname $reqnum $verb /api$endpoint $data")
+            val url = URL(dhup + endpoint)
+            (url.openConnection() as? HttpURLConnection)?.run {
+                setRequestProperty("Content-Type",
+                                   "application/x-www-form-urlencoded")
+                setRequestMethod(verb)
+                setConnectTimeout(6 * 1000)
+                setReadTimeout(20 * 1000)
+                if(verb == "POST") {
+                    setDoOutput(true)
+                    getOutputStream().write(data.toByteArray()) }
+                connect()  //ignored if POST already connected
+                code = getResponseCode()
+                if(code == 200) {
+                    res = inputStream.bufferedReader().readText() }
+                else {  //error code
+                    try {
+                        res = errorStream.bufferedReader().readText()
+                    } catch(rx: Exception) {
+                        Log.e("DiggerHubWebRequest", "errstream read error", rx)
+                        res = responseMessage } } }
+        } catch(e: Exception) {
+            Log.e("DiggerHubWebRequest", "Call error", e)
+        }
+        val cb = "app.svc.hubReqRes(\"$qname\",$reqnum,$code,\"$res\")"
+        context.runOnUiThread(Runnable() { context.djs(cb) })
     }
 }
