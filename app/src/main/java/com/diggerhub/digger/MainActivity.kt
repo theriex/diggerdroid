@@ -22,6 +22,7 @@ import androidx.annotation.Nullable
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media.MediaBrowserServiceCompat
 import androidx.webkit.WebViewAssetLoader
+import com.diggerhub.digger.BuildConfig
 import java.io.File
 import java.io.InputStream
 import java.net.URL
@@ -166,12 +167,16 @@ class DiggerAppInterface(private val context: MainActivity) {
         file.writeText(txt)
     }
     @JavascriptInterface
+    fun getAppVersion() : String {
+        return BuildConfig.VERSION_NAME
+    }
+    @JavascriptInterface
     fun readConfig() : String {
-        return readFile(File(context.filesDir, ".digger_config.json"))
+        return readFile(File(context.filesDir, "config.json"))
     }
     @JavascriptInterface
     fun writeConfig(cfgjson: String) {
-        writeFile(File(context.filesDir, ".digger_config.json"), cfgjson)
+        writeFile(File(context.filesDir, "config.json"), cfgjson)
     }
     @JavascriptInterface
     fun readDigDat() : String {
@@ -486,7 +491,10 @@ class HubWebRequest(private val context: MainActivity,
         } catch(e: Exception) {
             Log.e("DiggerHubWebRequest", "Call error", e)
         }
+        res = res.replace("\\", "\\\\")  //escape contained backslashes
+        res = res.replace("\"", "\\\"")  //escape contained quotes
         val cb = "app.svc.hubReqRes(\"$qname\",$reqnum,$code,\"$res\")"
+        Log.d("DiggerHub", cb)
         context.runOnUiThread(Runnable() { context.djs(cb) })
     }
 }

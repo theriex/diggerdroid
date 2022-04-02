@@ -87,6 +87,18 @@ app.svc = (function () {
     //user and config processing
     mgrs.usr = (function () {
     return {
+        deserializeAccountFields: function (acct) {
+            var sfs = ["kwdefs", "igfolds", "settings", "musfs"];
+            sfs.forEach(function (sf) {
+                if(typeof sf === "string" && acct[sf]) {  //"" won't parse
+                    acct[sf] = JSON.parse(acct[sf]); } }); },
+        writeUpdatedAccount: function (updacc) {
+            var conf = mgrs.loc.getConfig();
+            var accts = conf.acctsinfo.accts;
+            var aidx = accts.findIndex((a) => a.dsId === updacc.dsId);
+            updacc.token = accts[aidx].token;
+            accts[aidx] = updacc;
+            mgrs.loc.writeConfig(); },
         verifyConfig: function (cfg) {
             cfg = cfg || {};
             if(cfg.acctsinfo) { return cfg; }  //already initialized
@@ -235,6 +247,42 @@ app.svc = (function () {
     }());
 
 
+    //hub work manager handles local data work between hub and web app
+    mgrs.hw = (function () {
+    return {
+        updateLocalSong: function (dbo, s) {
+            var ls = dbo.songs[s.path];
+            if(!ls) {  //path was from some another Digger setup, try find it
+                ls = Object.values(dbo.songs).find((x) =>
+                    x.dsId === s.dsId ||  //match id or tiarab
+                        (x.ti === s.ti && x.ar === s.ar && x.ab === s.ab)); }
+            if(!ls) {  //non-local path, no matching local song, add for ref
+                ls = {path:s.path,  //Need a path, even if no file there.
+                      fq:"DN",      //Deleted file, Newly added
+                      ti:s.ti, ar:s.ar, ab:s.ab,
+                      lp:s.lp};     //Played on other setup, keep value
+                dbo.songs[s.path] = ls; }
+            jt.log("writing updated song " + ls.path);
+            const flds = ["modified", "dsId", "rv", "al", "el", "kws", "nt"];
+            if(!(ls.fq.startsWith("D") || ls.fq.startsWith("U"))) {
+                flds.push("fq"); }  //update fq unless deleted or unreadable
+            flds.forEach(function (fld) { ls[fld] = s[fld]; }); },
+        procSyncData: function (res) {  //hub.js processReceivedSyncData
+            const updacc = res[0];
+            updacc.diggerVersion = "v" + Android.getAppVersion();
+            mgrs.usr.deserializeAccountFields(updacc);
+            mgrs.usr.writeUpdatedAccount(updacc);
+            const updsongs = res.slice(1);
+            if(updsongs.length) {
+                const dbo = mgrs.loc.getDatabase();
+                updsongs.forEach(function (s) {
+                    mgrs.hw.updateLocalSong(dbo, s); });
+                mgrs.loc.writeSongs(); }
+            return res; }
+    };  //end mgrs.hw returned functions
+    }());
+
+
     //Local manager handles local environment interaction
     mgrs.loc = (function () {
         var config = null;
@@ -242,12 +290,12 @@ app.svc = (function () {
     return {
         getConfig: function () { return config; },
         writeConfig: function () {
-            jt.err("No user configurable paths on Android platform."); },
+            Android.writeConfig(JSON.stringify(config, null, 2)); },
         noteUpdatedAcctsInfo: function(acctsinfo) {
             config.acctsinfo = acctsinfo; },
         updateAccount: function (acctsinfo, contf/*, errf*/) {
             config.acctsinfo = acctsinfo;
-            Android.writeConfig(JSON.stringify(config));
+            mgrs.loc.writeConfig();
             setTimeout(function () { contf(config.acctsinfo); }, 50); },
         getDatabase: function () { return dbo; },
         songs: function () { return dbo.songs; },
@@ -264,7 +312,7 @@ app.svc = (function () {
                     return a.path.localeCompare(b.path); });
             contf(song, abs); },
         writeSongs: function () {
-            Android.writeDigDat(JSON.stringify(dbo)); },
+            Android.writeDigDat(JSON.stringify(dbo, null, 2)); },
         updateSong: function (song, contf) {
             mgrs.gen.copyUpdatedSongData(song, dbo.songs[song.path]);
             mgrs.loc.writeSongs();
@@ -304,10 +352,15 @@ app.svc = (function () {
             uims.forEach(function (uim) { app[uim].initialDataLoaded(); });
             if(!dbo.scanned) {
                 setTimeout(mgrs.sg.loadLibrary, 50); } },
-        hubSyncDat: function (/*data, contf, errf*/) {
-            jt.log("svc.loc.hubSyncDat not implemented yet"); },
+        hubSyncDat: function (data, contf, errf) {
+            mgrs.hc.queueRequest("hubSyncDat", "/hubsync", "POST", data,
+                                 function (res) {
+                                     res = mgrs.hw.procSyncData(res);
+                                     contf(res); }, errf); },
         noteUpdatedSongData: function (/*updsong*/) {
-            jt.log("svc.loc.noteUpdatedSongData not implemented yet"); },
+            //on Android the local database has already been updated, and
+            //local memory is up to date, so this callback should be ignored
+            return; },
         updateHubAccount: function (/*contf, errf*/) {
             jt.log("svc.loc.updateHubAccount not implemented yet"); },
         signInOrJoin: function (endpoint, data, contf, errf) {
