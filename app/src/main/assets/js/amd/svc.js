@@ -376,12 +376,16 @@ app.svc = (function () {
 
     //general manager is main interface for app logic
     mgrs.gen = (function () {
+        var platconf = {
+            hdm: "loc",   //host data manager is local
+            musicPath: "fixed",  //can't change where music files are
+            dbPath: "fixed",  //rating info is only kept in app files for now
+            audsrc: "Android"};
         var songfields = ["dsType", "batchconv", "aid", "ti", "ar", "ab",
                           "el", "al", "kws", "rv", "fq", "lp", "nt",
                           "dsId", "modified"];
     return {
-        getHostType: function () { return "loc"; },  //not running on web..
-        getAudioPlatform: function () { return "Android"; },
+        plat: function (key) { return platconf[key]; },
         addFriend: function (/*mfem, contf, errf*/) {
             jt.log("svc.gen.addFriend not implemented yet"); },
         createFriend: function (/*dat, contf, errf*/) {
@@ -410,7 +414,7 @@ app.svc = (function () {
 
 return {
     init: function () { mgrs.gen.initialize(); },
-    getHostType: function () { return mgrs.gen.getHostType(); },
+    plat: function (key) { return mgrs.gen.plat(key); },
     songs: function () { return mgrs.loc.songs(); },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
