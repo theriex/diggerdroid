@@ -20,6 +20,34 @@ app.svc = (function () {
     var mgrs = {};  //general container for managers
 
 
+    //!EQUIVALENT CODE IN main digger proj svc.js  See comments there.
+    function txSong (song) {
+        var delflds = ["mrd", "smti", "smar", "smab"];
+        var escflds = ["path", "ti", "ar", "ab", "nt"];
+        var wsrw = ["having", "select", "union"];
+        song = JSON.parse(JSON.stringify(song));
+        delflds.forEach(function (fld) { delete song[fld]; });
+        escflds.forEach(function (fld) {  //replace parens with HTML chars
+            if(song[fld]) {
+                song[fld] = song[fld].replace(/\(/g, "ESCOPENPAREN");
+                song[fld] = song[fld].replace(/\)/g, "ESCCLOSEPAREN");
+                song[fld] = song[fld].replace(/'/g, "ESCSINGLEQUOTE");
+                song[fld] = song[fld].replace(/&/g, "ESCAMPERSAND");
+                wsrw.forEach(function (rw) {
+                    song[fld] = song[fld].replace(
+                        new RegExp(rw, "gi"), function (match) {
+                            const rev = match.split("").reverse().join("");
+                            return "WSRW" + rev; }); });
+            } });
+        return song;
+    }
+    //function txSongJSON (song) { return JSON.stringify(txSong(song)); }
+    function txSongsJSON (songs) {
+        songs = songs.map((song) => txSong(song));
+        return JSON.stringify(songs);
+    }
+
+
     //Media Playback manager handles transport and playback calls
     mgrs.mp = (function () {
         var rqn = 0;
@@ -79,7 +107,7 @@ app.svc = (function () {
     mgrs.cpx = (function () {
     return {
         exportSongs: function (/*dat, statusfunc, contfunc, errfunc*/) {
-            jt.log("svc.cpx.exportSongs not implemented yet"); }
+            jt.log("svc.cpx.exportSongs not supported."); }
     };  //end mgrs.cpx returned functions
     }());
 
@@ -99,6 +127,15 @@ app.svc = (function () {
             updacc.token = accts[aidx].token;
             accts[aidx] = updacc;
             mgrs.loc.writeConfig(); },
+        noteUpdatedAccount: function (updacc) {
+            mgrs.usr.deserializeAccountFields(updacc);
+            jt.log("svc.usr.noteUpdatedAccoount musfs: " + JSON.stringify(updacc.musfs));
+            mgrs.usr.writeUpdatedAccount(updacc); },
+        noteFriendUpdateReturn: function (res) {
+            mgrs.usr.noteUpdatedAccount(res[0]);
+            const ca = app.top.dispatch("locam", "getAccount");
+            app.top.dispatch("locam", "noteReturnedCurrAcct",
+                             res[0], ca.token); },
         verifyConfig: function (cfg) {
             cfg = cfg || {};
             if(cfg.acctsinfo) { return cfg; }  //already initialized
@@ -228,7 +265,7 @@ app.svc = (function () {
                            cf:contf, ef:errf, rn:reqnum};
             reqnum += 1;
             if(rqs[qname]) {  //existing request(s) pending
-                rqs.push(entry); }  //process in turn
+                rqs[qname].push(entry); }  //process in turn
             else {  //queueing a new request
                 rqs[qname] = [entry];
                 startRequest(entry); } },
@@ -250,6 +287,17 @@ app.svc = (function () {
     //hub work manager handles local data work between hub and web app
     mgrs.hw = (function () {
     return {
+        getSongUploadData: function () {  //see hub.js mfcontrib
+            var mstc = 32;  //maximum song transfer count
+            var dat = {uplds:[]}; var dbo = mgrs.loc.getDatabase();
+            Object.entries(dbo.songs).forEach(function ([p, s]) {
+                if(dat.uplds.length < mstc && !s.dsId &&
+                   s.ti && s.ar && (!s.fq || !(s.fq.startsWith("D") ||
+                                               s.fq.startsWith("U")))) {
+                    s.path = p;
+                    dat.uplds.push(s); } });
+            dat.uplds = txSongsJSON(dat.uplds);
+            return dat; },
         updateLocalSong: function (dbo, s) {
             var ls = dbo.songs[s.path];
             if(!ls) {  //path was from some another Digger setup, try find it
@@ -267,17 +315,17 @@ app.svc = (function () {
             if(!(ls.fq.startsWith("D") || ls.fq.startsWith("U"))) {
                 flds.push("fq"); }  //update fq unless deleted or unreadable
             flds.forEach(function (fld) { ls[fld] = s[fld]; }); },
-        procSyncData: function (res) {  //hub.js processReceivedSyncData
-            const updacc = res[0];
-            updacc.diggerVersion = "v" + Android.getAppVersion();
-            mgrs.usr.deserializeAccountFields(updacc);
-            mgrs.usr.writeUpdatedAccount(updacc);
-            const updsongs = res.slice(1);
+        updateSongs: function (updsongs) {
             if(updsongs.length) {
                 const dbo = mgrs.loc.getDatabase();
                 updsongs.forEach(function (s) {
                     mgrs.hw.updateLocalSong(dbo, s); });
-                mgrs.loc.writeSongs(); }
+                mgrs.loc.writeSongs(); } },
+        procSyncData: function (res) {  //hub.js processReceivedSyncData
+            const updacc = res[0];
+            updacc.diggerVersion = "v" + Android.getAppVersion();
+            mgrs.usr.noteUpdatedAccount(updacc);
+            mgrs.hw.updateSongs(res.slice(1));
             return res; }
     };  //end mgrs.hw returned functions
     }());
@@ -361,8 +409,9 @@ app.svc = (function () {
             //on Android the local database has already been updated, and
             //local memory is up to date, so this callback should be ignored
             return; },
-        updateHubAccount: function (/*contf, errf*/) {
-            jt.log("svc.loc.updateHubAccount not implemented yet"); },
+        updateHubAccount: function (data, contf, errf) {
+            mgrs.hc.queueRequest("updateHubAccount", "/hubsync", "POST",
+                                 data, contf, errf); },
         signInOrJoin: function (endpoint, data, contf, errf) {
             //endpoint to call is either /newacct or /acctok
             mgrs.hc.queueRequest("signInOrJoin", "/" + endpoint, "POST", data,
@@ -386,14 +435,34 @@ app.svc = (function () {
                           "dsId", "modified"];
     return {
         plat: function (key) { return platconf[key]; },
-        addFriend: function (/*mfem, contf, errf*/) {
-            jt.log("svc.gen.addFriend not implemented yet"); },
-        createFriend: function (/*dat, contf, errf*/) {
-            jt.log("svc.gen.createFriend not implemented yet"); },
-        friendContributions: function (/*contf, errf*/) {
-            jt.log("svc.gen.friendContributions not implemented yet"); },
-        clearFriendRatings: function (/*mfid, contf, errf*/) {
-            jt.log("svc.gen.clearFriendRatings not implemented yet"); },
+        addFriend: function (mfem, contf, errf) {
+            mgrs.hc.queueRequest("addFriend", "/addmusf", "POST",
+                                 app.svc.authdata({mfaddr:mfem}),
+                                 function (res) {
+                                     mgrs.usr.noteFriendUpdateReturn(res);
+                                     contf(res); }, errf); },
+        createFriend: function (dat, contf, errf) {
+            mgrs.hc.queueRequest("createFriend", "/createmusf", "POST",
+                                 app.svc.authdata(dat),
+                                 function (res) {
+                                     mgrs.usr.noteFriendUpdateReturn(res);
+                                     contf(res); }, errf); },
+        friendContributions: function (contf, errf) {
+            var dat = mgrs.hw.getSongUploadData();
+            mgrs.hc.queueRequest("friendContributions", "/mfcontrib", "POST",
+                                 app.svc.authdata(dat),
+                                 function (res) {
+                                     jt.log("friendContributions res length " +
+                                            res.length);
+                                     mgrs.usr.noteFriendUpdateReturn(res);
+                                     mgrs.hw.updateSongs(res.slice(1));
+                                     contf(res.length - 1); }, errf); },
+        clearFriendRatings: function (friendid, contf, errf) {
+            mgrs.hc.queueRequest("clearFriendRatings", "/mfclear", "POST",
+                                 app.svc.authdata({mfid:friendid}),
+                                 function (res) {  //no acct, just upd songs
+                                     mgrs.hw.updateSongs(res);
+                                     contf(res.length); }, errf); },
         authdata: function (obj) { //return obj post data, with an/at added
             var digacc = app.top.dispatch("gen", "getAccount");
             var authdat = jt.objdata({an:digacc.email, at:digacc.token});
