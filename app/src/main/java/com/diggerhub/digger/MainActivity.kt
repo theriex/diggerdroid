@@ -4,6 +4,8 @@ import android.Manifest.permission.READ_EXTERNAL_STORAGE
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.res.AssetManager
+import android.content.res.AssetManager.ACCESS_BUFFER
 import android.database.Cursor
 import android.media.MediaPlayer
 import android.net.Uri
@@ -220,6 +222,12 @@ class DiggerAppInterface(private val context: MainActivity) {
         } catch(e: Exception) {
             Log.e("DiggerAppInterface", "Web request failed", e)
         }
+    }
+    @JavascriptInterface
+    fun getAssetContent(path:String): String {
+        val inputStream = context.getAssets().open(path, ACCESS_BUFFER)
+        val text = inputStream.bufferedReader().use { it.readText() }
+        return text
     }
 }
 

@@ -469,6 +469,15 @@ app.svc = (function () {
             if(obj) {
                 authdat += "&" + jt.objdata(obj); }
             return authdat; },
+        manualContent: function () {
+            var aod = jt.byId("appoverlaydiv");
+            var html = Android.getAssetContent("docs/manual.html");
+            html = jt.tac2html(
+                ["div", {id:"manualcontentdiv",
+                         style:"height:" + (aod.offsetHeight - 20) + "px"},
+                 html.slice(html.indexOf("<body>") + 6,
+                            html.indexOf("</body>"))]);
+            return html; },
         copyUpdatedSongData: function (song, updsong) {
             songfields.forEach(function (fld) {
                 if(updsong.hasOwnProperty(fld)) {  //don't copy undefined values
@@ -489,6 +498,7 @@ return {
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
     updateSong: function (song, contf) { mgrs.loc.updateSong(song, contf); },
     authdata: function (obj) { return mgrs.gen.authdata(obj); },
+    manualContent: function () { return mgrs.gen.manualContent(); },
     noteUpdatedState: function (label) { mgrs.loc.noteUpdatedState(label); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     playerFailure: function (err) { mgrs.mp.playerFailure(err); },
