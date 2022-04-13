@@ -20,30 +20,8 @@ app.svc = (function () {
     var mgrs = {};  //general container for managers
 
 
-    //!EQUIVALENT CODE IN main digger proj svc.js  See comments there.
-    function txSong (song) {
-        var delflds = ["mrd", "smti", "smar", "smab"];
-        var escflds = ["path", "ti", "ar", "ab", "nt"];
-        var wsrw = ["having", "select", "union"];
-        song = JSON.parse(JSON.stringify(song));
-        delflds.forEach(function (fld) { delete song[fld]; });
-        escflds.forEach(function (fld) {  //replace parens with HTML chars
-            if(song[fld]) {
-                song[fld] = song[fld].replace(/\(/g, "ESCOPENPAREN");
-                song[fld] = song[fld].replace(/\)/g, "ESCCLOSEPAREN");
-                song[fld] = song[fld].replace(/'/g, "ESCSINGLEQUOTE");
-                song[fld] = song[fld].replace(/&/g, "ESCAMPERSAND");
-                wsrw.forEach(function (rw) {
-                    song[fld] = song[fld].replace(
-                        new RegExp(rw, "gi"), function (match) {
-                            const rev = match.split("").reverse().join("");
-                            return "WSRW" + rev; }); });
-            } });
-        return song;
-    }
-    //function txSongJSON (song) { return JSON.stringify(txSong(song)); }
     function txSongsJSON (songs) {
-        songs = songs.map((song) => txSong(song));
+        songs = songs.map((song) => app.txSong(song));
         return JSON.stringify(songs);
     }
 
