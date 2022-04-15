@@ -339,7 +339,7 @@ app.svc = (function () {
             contf(song, abs); },
         writeSongs: function () {
             Android.writeDigDat(JSON.stringify(dbo, null, 2)); },
-        updateSong: function (song, contf) {
+        updateSong: function (song, contf, ignore /*errf*/) {
             mgrs.gen.copyUpdatedSongData(song, dbo.songs[song.path]);
             mgrs.loc.writeSongs();
             jt.out("modindspan", "");  //turn off indicator light
@@ -474,7 +474,7 @@ return {
     songs: function () { return mgrs.loc.songs(); },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
-    updateSong: function (song, contf) { mgrs.loc.updateSong(song, contf); },
+    updateSong: function (song, cf, ef) { mgrs.loc.updateSong(song, cf, ef); },
     authdata: function (obj) { return mgrs.gen.authdata(obj); },
     manualContent: function () { return mgrs.gen.manualContent(); },
     noteUpdatedState: function (label) { mgrs.loc.noteUpdatedState(label); },
