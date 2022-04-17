@@ -170,7 +170,7 @@ class DiggerAppInterface(private val context: MainActivity) {
     }
     @JavascriptInterface
     fun getAppVersion() : String {
-        return BuildConfig.VERSION_NAME
+        return "v" + BuildConfig.VERSION_NAME
     }
     @JavascriptInterface
     fun readConfig() : String {

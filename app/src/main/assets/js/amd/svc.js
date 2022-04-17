@@ -5,7 +5,6 @@
 app.svc = (function () {
     "use strict";
 
-    const droidversion = "v1.0.0"; 
     const dfltkeywords = {  //copied from digger/server/dhdefs.js
         Social: {pos: 1, sc: 0, ig: 0, dsc: "Music I might select to play when other people are listening."},
         Personal: {pos: 2, sc: 0, ig: 0, dsc: "Music I might select to play when it's just me listening."},
@@ -212,7 +211,7 @@ app.svc = (function () {
             Android.requestMediaRead(); },
         verifyDatabase: function (dbo) {
             if(dbo && dbo.version) { return dbo; }  //already initialized
-            dbo = {version:droidversion,
+            dbo = {version:Android.getAppVersion(),
                    scanned:"",  //ISO latest walk of song files
                    songcount:0,
                    //songs are indexed by relative path off of musicPath e.g.
@@ -301,7 +300,7 @@ app.svc = (function () {
                 mgrs.loc.writeSongs(); } },
         procSyncData: function (res) {  //hub.js processReceivedSyncData
             const updacc = res[0];
-            updacc.diggerVersion = "v" + Android.getAppVersion();
+            updacc.diggerVersion = Android.getAppVersion();
             mgrs.usr.noteUpdatedAccount(updacc);
             mgrs.hw.updateSongs(res.slice(1));
             return res; }
