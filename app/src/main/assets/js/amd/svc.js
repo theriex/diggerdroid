@@ -108,7 +108,7 @@ app.svc = (function () {
             mgrs.usr.deserializeAccountFields(updacc);
             jt.log("svc.usr.noteUpdatedAccoount musfs: " + JSON.stringify(updacc.musfs));
             mgrs.usr.writeUpdatedAccount(updacc); },
-        noteFriendUpdateReturn: function (res) {
+        noteFanUpdateReturn: function (res) {
             mgrs.usr.noteUpdatedAccount(res[0]);
             const ca = app.top.dispatch("locam", "getAccount");
             app.top.dispatch("locam", "noteReturnedCurrAcct",
@@ -412,31 +412,31 @@ app.svc = (function () {
                           "dsId", "modified"];
     return {
         plat: function (key) { return platconf[key]; },
-        addFriend: function (mfem, contf, errf) {
-            mgrs.hc.queueRequest("addFriend", "/addmusf", "POST",
+        addFan: function (mfem, contf, errf) {
+            mgrs.hc.queueRequest("addFan", "/addmusf", "POST",
                                  app.svc.authdata({mfaddr:mfem}),
                                  function (res) {
-                                     mgrs.usr.noteFriendUpdateReturn(res);
+                                     mgrs.usr.noteFanUpdateReturn(res);
                                      contf(res); }, errf); },
-        createFriend: function (dat, contf, errf) {
-            mgrs.hc.queueRequest("createFriend", "/createmusf", "POST",
+        createFan: function (dat, contf, errf) {
+            mgrs.hc.queueRequest("createFan", "/createmusf", "POST",
                                  app.svc.authdata(dat),
                                  function (res) {
-                                     mgrs.usr.noteFriendUpdateReturn(res);
+                                     mgrs.usr.noteFanUpdateReturn(res);
                                      contf(res); }, errf); },
-        friendContributions: function (contf, errf) {
+        fanContributions: function (contf, errf) {
             var dat = mgrs.hw.getSongUploadData();
-            mgrs.hc.queueRequest("friendContributions", "/mfcontrib", "POST",
+            mgrs.hc.queueRequest("fanContributions", "/mfcontrib", "POST",
                                  app.svc.authdata(dat),
                                  function (res) {
-                                     jt.log("friendContributions res length " +
+                                     jt.log("fanContributions res length " +
                                             res.length);
-                                     mgrs.usr.noteFriendUpdateReturn(res);
+                                     mgrs.usr.noteFanUpdateReturn(res);
                                      mgrs.hw.updateSongs(res.slice(1));
                                      contf(res.length - 1); }, errf); },
-        clearFriendRatings: function (friendid, contf, errf) {
-            mgrs.hc.queueRequest("clearFriendRatings", "/mfclear", "POST",
-                                 app.svc.authdata({mfid:friendid}),
+        clearFanRatings: function (fanid, contf, errf) {
+            mgrs.hc.queueRequest("clearFanRatings", "/mfclear", "POST",
+                                 app.svc.authdata({mfid:fanid}),
                                  function (res) {  //no acct, just upd songs
                                      mgrs.hw.updateSongs(res);
                                      contf(res.length); }, errf); },

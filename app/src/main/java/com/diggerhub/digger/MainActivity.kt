@@ -403,7 +403,7 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
         return binder
     }
 
-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         //intent.action is declared in manifest and used by startService
         if(intent != null) {  //might be null if restarted after being killed
             val pathuri = intent.data!!  //force Uri? to Uri
