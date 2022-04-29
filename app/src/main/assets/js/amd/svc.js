@@ -135,17 +135,6 @@ app.svc = (function () {
     //song database processing
     mgrs.sg = (function () {
         var dbstatdiv = "topdlgdiv";
-        function verifySongWorkingFields(s) {
-            s.el = s.el || 49;
-            s.al = s.al || 49;
-            s.kws = s.kws || "";
-            s.rv = s.rv || 5;
-            s.fq = s.fq || "N";
-            s.lp = s.lp || "";
-            s.nt = s.nt || "";
-            s.pc = s.pc || 0;
-            s.srcid = s.srcid || "";
-            s.srcrat = s.srcrat || ""; }
     return {
         setArtistFromPath: function (song) {
             const pes = song.path.split("/");
@@ -168,7 +157,7 @@ app.svc = (function () {
                 song.ti = dai.title;
                 song.ar = dai.artist;
                 song.ab = dai.album;
-                verifySongWorkingFields(song);
+                app.top.dispatch("dbc", "verifySong", song);
                 if(!song.ar) {  //artist required for hub sync
                     mgrs.sg.setArtistFromPath(song); } }); },
         parseAudioSummary: function (dais) {
@@ -210,7 +199,9 @@ app.svc = (function () {
             jt.out(dbstatdiv, "Reading music...");
             Android.requestMediaRead(); },
         verifyDatabase: function (dbo) {
-            if(dbo && dbo.version) { return dbo; }  //already initialized
+            var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
+            if(stat.verified) { return dbo; }
+            jt.log("svc.db.verifyDatabase " + JSON.stringify(stat));
             dbo = {version:Android.getAppVersion(),
                    scanned:"",  //ISO latest walk of song files
                    songcount:0,
@@ -337,6 +328,9 @@ app.svc = (function () {
                     return a.path.localeCompare(b.path); });
             contf(song, abs); },
         writeSongs: function () {
+            var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
+            if(!stat.verified) {
+                return jt.err("Not writing bad data " + JSON.stringify(stat)); }
             Android.writeDigDat(JSON.stringify(dbo, null, 2)); },
         updateSong: function (song, contf, ignore /*errf*/) {
             mgrs.gen.copyUpdatedSongData(song, dbo.songs[song.path]);
@@ -370,7 +364,6 @@ app.svc = (function () {
                 return jt.err("Initial data load failed: " + e); }
             config = mgrs.usr.verifyConfig(config);
             dbo = mgrs.sg.verifyDatabase(dbo);
-            jt.log("dbs " + Object.keys(dbo.songs));
             //let rest of app know data is ready, then check the library:
             const uims = ["top",      //display login name
                           "filter"];  //show settings, app.deck.update
@@ -446,15 +439,6 @@ app.svc = (function () {
             if(obj) {
                 authdat += "&" + jt.objdata(obj); }
             return authdat; },
-        manualContent: function () {
-            var aod = jt.byId("appoverlaydiv");
-            var html = Android.getAssetContent("docs/manual.html");
-            html = jt.tac2html(
-                ["div", {id:"manualcontentdiv",
-                         style:"height:" + (aod.offsetHeight - 20) + "px"},
-                 html.slice(html.indexOf("<body>") + 6,
-                            html.indexOf("</body>"))]);
-            return html; },
         copyUpdatedSongData: function (song, updsong) {
             songfields.forEach(function (fld) {
                 if(updsong.hasOwnProperty(fld)) {  //don't copy undefined values
@@ -462,7 +446,14 @@ app.svc = (function () {
         updateMultipleSongs: function (/*updss, contf, errf*/) {
             jt.err("svc.gen.updateMultipleSongs is web only"); },
         initialize: function () {  //don't block init of rest of modules
-            setTimeout(mgrs.loc.loadInitialData, 50); }
+            setTimeout(mgrs.loc.loadInitialData, 50); },
+        docContent: function (docurl, contf) {
+            var fn = jt.dec(docurl);
+            var sidx = fn.lastIndexOf("/");
+            if(sidx >= 0) {
+                fn = fn.slice(sidx + 1); }
+            const text = Android.getAssetContent("docs/" + fn);
+            contf(text); }
     };  //end mgrs.gen returned functions
     }());
 
@@ -475,12 +466,13 @@ return {
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
     updateSong: function (song, cf, ef) { mgrs.loc.updateSong(song, cf, ef); },
     authdata: function (obj) { return mgrs.gen.authdata(obj); },
-    manualContent: function () { return mgrs.gen.manualContent(); },
     noteUpdatedState: function (label) { mgrs.loc.noteUpdatedState(label); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     playerFailure: function (err) { mgrs.mp.playerFailure(err); },
     notePlaybackStatus: function (stat) { mgrs.mp.notePlaybackStatus(stat); },
     hubReqRes: function (q, r, c, d) { mgrs.hc.hubResponse(q, r, c, d); },
+    urlOpenSupp: function () { return false; }, //links break webview
+    docContent: function (du, cf) { mgrs.gen.docContent(du, cf); },
     dispatch: function (mgrname, fname, ...args) {
         return mgrs[mgrname][fname].apply(app.svc, args); }
 };  //end of returned functions

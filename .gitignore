@@ -100,9 +100,12 @@ app/src/main/assets/js/jtmin.js
 app/src/main/assets/js/app.js
 app/src/main/assets/img
 app/src/main/assets/docs/hubsyncNotes.txt
+app/src/main/assets/docs/about.html
 app/src/main/assets/docs/manual.html
+app/src/main/assets/docs/privacy.html
+app/src/main/assets/docs/support.html
 app/src/main/assets/docs/metadata.html
-app/src/main/assets/docs/musicfriend.html
+app/src/main/assets/docs/musicfan.html
 app/src/main/assets/docs/retrievalclassification.txt
 app/src/main/assets/docs/websrvapp.html
 app/src/main/assets/js/amd/deck.js
