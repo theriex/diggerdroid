@@ -110,24 +110,9 @@ app.svc = (function () {
             mgrs.usr.writeUpdatedAccount(updacc); },
         noteFanUpdateReturn: function (res) {
             mgrs.usr.noteUpdatedAccount(res[0]);
-            const ca = app.top.dispatch("locam", "getAccount");
-            app.top.dispatch("locam", "noteReturnedCurrAcct",
-                             res[0], ca.token); },
-        verifyConfig: function (cfg) {
-            cfg = cfg || {};
-            if(cfg.acctsinfo) { return cfg; }  //already initialized
-            //see hub.js verifyDefaultAccount in main Digger project
-            cfg.acctsinfo = {currid:"", accts:[]};
-            if(!cfg.acctsinfo.accts.find((x) => x.dsId === "101")) {
-                const diggerbday = "2019-10-11T00:00:00Z";
-                cfg.acctsinfo.accts.push(
-                    {dsType:"DigAcc", dsId:"101", firstname:"Digger",
-                     created:diggerbday, modified:diggerbday + ";1",
-                     email:"support@diggerhub.com", token:"none",
-                     kwdefs:dfltkeywords, igfolds:[]}); }
-            if(!cfg.acctsinfo.currid) {
-                cfg.acctsinfo.currid = "101"; }
-            return cfg; }
+            const ca = app.top.dispatch("aaa", "getAccount");
+            app.top.dispatch("aaa", "reflectAccountChangeInRuntime",
+                             res[0], ca.token); }
     };  //end mgrs.usr returned functions
     }());
 
@@ -336,7 +321,7 @@ app.svc = (function () {
             mgrs.gen.copyUpdatedSongData(song, dbo.songs[song.path]);
             mgrs.loc.writeSongs();
             jt.out("modindspan", "");  //turn off indicator light
-            app.top.dispatch("a2h", "syncToHub");  //sched sync
+            app.top.dispatch("srs", "syncToHub");  //sched sync
             if(contf) {
                 contf(dbo.songs[song.path]); } },
         noteUpdatedState: function (label) {
@@ -362,7 +347,7 @@ app.svc = (function () {
                 dbo = JSON.parse(Android.readDigDat() || "{}"); }
             catch(e) {
                 return jt.err("Initial data load failed: " + e); }
-            config = mgrs.usr.verifyConfig(config);
+            config = config || {};  //default account set up in top.js
             dbo = mgrs.sg.verifyDatabase(dbo);
             //let rest of app know data is ready, then check the library:
             const uims = ["top",      //display login name
@@ -379,16 +364,9 @@ app.svc = (function () {
             //on Android the local database has already been updated, and
             //local memory is up to date, so this callback should be ignored
             return; },
-        updateHubAccount: function (data, contf, errf) {
-            mgrs.hc.queueRequest("updateHubAccount", "/hubsync", "POST",
-                                 data, contf, errf); },
-        signInOrJoin: function (endpoint, data, contf, errf) {
-            //endpoint to call is either /newacct or /acctok
-            mgrs.hc.queueRequest("signInOrJoin", "/" + endpoint, "POST", data,
-                                 contf, errf); },
-        emailPwdReset: function (data, contf, errf) {
-            mgrs.hc.queueRequest("emailPwdReset", app.cb("/mailpwr", data),
-                                 "GET", null, contf, errf); }
+        makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
+            mgrs.hc.queueRequest(endpoint, "/" + endpoint, verb, data,
+                                 contf, errf); }
     };  //end mgrs.loc returned functions
     }());
 
@@ -434,7 +412,7 @@ app.svc = (function () {
                                      mgrs.hw.updateSongs(res);
                                      contf(res.length); }, errf); },
         authdata: function (obj) { //return obj post data, with an/at added
-            var digacc = app.top.dispatch("gen", "getAccount");
+            var digacc = app.top.dispatch("aaa", "getAccount");
             var authdat = jt.objdata({an:digacc.email, at:digacc.token});
             if(obj) {
                 authdat += "&" + jt.objdata(obj); }
