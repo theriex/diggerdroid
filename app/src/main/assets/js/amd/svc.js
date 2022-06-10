@@ -5,17 +5,6 @@
 app.svc = (function () {
     "use strict";
 
-    const dfltkeywords = {  //copied from digger/server/dhdefs.js
-        Social: {pos: 1, sc: 0, ig: 0, dsc: "Music I might select to play when other people are listening."},
-        Personal: {pos: 2, sc: 0, ig: 0, dsc: "Music I might select to play when it's just me listening."},
-        Office: {pos: 3, sc: 0, ig: 0, dsc: "Music that you can listen to while you work."},
-        Dance: {pos: 4, sc: 0, ig: 0, dsc: "Music you would dance to."},
-        Ambient: {pos: 0, sc: 0, ig: 0, dsc: "Music that can be listened to from zero to full attention, transitioning from and to silence."},
-        Jazz: {pos: 0, sc: 0, ig: 0, dsc: "However you define it for your collection."},
-        Classical: {pos: 0, sc: 0, ig: 0, dsc: "However you define it for your collection."},
-        Talk: {pos: 0, sc: 0, ig: 0, dsc: "Spoken word."},
-        Solstice: {pos: 0, sc: 0, ig: 0, dsc: "Holiday seasonal."}};
-
     var mgrs = {};  //general container for managers
 
 
@@ -92,21 +81,19 @@ app.svc = (function () {
     //user and config processing
     mgrs.usr = (function () {
     return {
-        deserializeAccountFields: function (acct) {
-            var sfs = ["kwdefs", "igfolds", "settings", "musfs"];
-            sfs.forEach(function (sf) {
-                if(typeof sf === "string" && acct[sf]) {  //"" won't parse
-                    acct[sf] = JSON.parse(acct[sf]); } }); },
         writeUpdatedAccount: function (updacc) {
             var conf = mgrs.loc.getConfig();
             var accts = conf.acctsinfo.accts;
             var aidx = accts.findIndex((a) => a.dsId === updacc.dsId);
             updacc.token = accts[aidx].token;
             accts[aidx] = updacc;
-            mgrs.loc.writeConfig(); },
+            mgrs.loc.writeConfig(conf,
+                function () {
+                    jt.log("svc.usr.writeUpdatedAccount success"); }); },
         noteUpdatedAccount: function (updacc) {
-            mgrs.usr.deserializeAccountFields(updacc);
-            jt.log("svc.usr.noteUpdatedAccoount musfs: " + JSON.stringify(updacc.musfs));
+            app.top.dispatch("hcu", "deserializeAccount", updacc);
+            jt.log("svc.usr.noteUpdatedAccoount musfs: " +
+                   JSON.stringify(updacc.musfs));
             mgrs.usr.writeUpdatedAccount(updacc); },
         noteFanUpdateReturn: function (res) {
             mgrs.usr.noteUpdatedAccount(res[0]);
@@ -288,15 +275,19 @@ app.svc = (function () {
     mgrs.loc = (function () {
         var config = null;
         var dbo = null;
+        function setAndWriteConfig(cfg) {
+            config = cfg;
+            Android.writeConfig(JSON.stringify(config, null, 2)); }
     return {
         getConfig: function () { return config; },
-        writeConfig: function () {
-            Android.writeConfig(JSON.stringify(config, null, 2)); },
+        writeConfig: function (cfg, contf/*, errf*/) {
+            setAndWriteConfig(cfg);
+            setTimeout(function () { contf(config); }, 50); },
         noteUpdatedAcctsInfo: function(acctsinfo) {
             config.acctsinfo = acctsinfo; },
         updateAccount: function (acctsinfo, contf/*, errf*/) {
             config.acctsinfo = acctsinfo;
-            mgrs.loc.writeConfig();
+            setAndWriteConfig(config);
             setTimeout(function () { contf(config.acctsinfo); }, 50); },
         getDatabase: function () { return dbo; },
         songs: function () { return dbo.songs; },
@@ -350,9 +341,11 @@ app.svc = (function () {
             config = config || {};  //default account set up in top.js
             dbo = mgrs.sg.verifyDatabase(dbo);
             //let rest of app know data is ready, then check the library:
+            const startdata = {"config":config, songdata:dbo};
             const uims = ["top",      //display login name
                           "filter"];  //show settings, app.deck.update
-            uims.forEach(function (uim) { app[uim].initialDataLoaded(); });
+            uims.forEach(function (uim) {
+                app[uim].initialDataLoaded(startdata); });
             if(!dbo.scanned) {
                 setTimeout(mgrs.sg.loadLibrary, 50); } },
         hubSyncDat: function (data, contf, errf) {
@@ -383,34 +376,6 @@ app.svc = (function () {
                           "dsId", "modified"];
     return {
         plat: function (key) { return platconf[key]; },
-        addFan: function (mfem, contf, errf) {
-            mgrs.hc.queueRequest("addFan", "/addmusf", "POST",
-                                 app.svc.authdata({mfaddr:mfem}),
-                                 function (res) {
-                                     mgrs.usr.noteFanUpdateReturn(res);
-                                     contf(res); }, errf); },
-        createFan: function (dat, contf, errf) {
-            mgrs.hc.queueRequest("createFan", "/createmusf", "POST",
-                                 app.svc.authdata(dat),
-                                 function (res) {
-                                     mgrs.usr.noteFanUpdateReturn(res);
-                                     contf(res); }, errf); },
-        fanContributions: function (contf, errf) {
-            var dat = mgrs.hw.getSongUploadData();
-            mgrs.hc.queueRequest("fanContributions", "/mfcontrib", "POST",
-                                 app.svc.authdata(dat),
-                                 function (res) {
-                                     jt.log("fanContributions res length " +
-                                            res.length);
-                                     mgrs.usr.noteFanUpdateReturn(res);
-                                     mgrs.hw.updateSongs(res.slice(1));
-                                     contf(res.length - 1); }, errf); },
-        clearFanRatings: function (fanid, contf, errf) {
-            mgrs.hc.queueRequest("clearFanRatings", "/mfclear", "POST",
-                                 app.svc.authdata({mfid:fanid}),
-                                 function (res) {  //no acct, just upd songs
-                                     mgrs.hw.updateSongs(res);
-                                     contf(res.length); }, errf); },
         authdata: function (obj) { //return obj post data, with an/at added
             var digacc = app.top.dispatch("aaa", "getAccount");
             var authdat = jt.objdata({an:digacc.email, at:digacc.token});
@@ -431,7 +396,23 @@ app.svc = (function () {
             if(sidx >= 0) {
                 fn = fn.slice(sidx + 1); }
             const text = Android.getAssetContent("docs/" + fn);
-            contf(text); }
+            contf(text); },
+        makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
+            mgrs.loc.makeHubAcctCall(verb, endpoint, data, contf, errf); },
+        writeConfig: function (cfg, contf, errf) {
+            mgrs.loc.writeConfig(cfg, contf, errf); },
+        fanGroupAction: function (data, contf, errf) {
+            mgrs.hc.queueRequest("fangrpact", "/fangrpact", "POST", data,
+                                 //caller writes updated account data
+                                 contf, errf); },
+        fanCollab: function (data, contf, errf) {
+            mgrs.hc.queueRequest("fancollab", "/fancollab", "POST", data,
+                                 function (res) {
+                                     res = mgrs.hw.procSyncData(res);
+                                     contf(res); }, errf); },
+        fanMessage: function (data, contf, errf) {
+            mgrs.hc.queueRequest("fanmsg", "/fanmsg", "POST", data,
+                                 contf, errf); }
     };  //end mgrs.gen returned functions
     }());
 
@@ -451,7 +432,9 @@ return {
     hubReqRes: function (q, r, c, d) { mgrs.hc.hubResponse(q, r, c, d); },
     urlOpenSupp: function () { return false; }, //links break webview
     docContent: function (du, cf) { mgrs.gen.docContent(du, cf); },
+    writeConfig: function (cfg, cf, ef) { mgrs.gen.writeConfig(cfg, cf, ef); },
     dispatch: function (mgrname, fname, ...args) {
+        console.log("svc.dispatch " + mgrname + " " + fname);
         return mgrs[mgrname][fname].apply(app.svc, args); }
 };  //end of returned functions
 }());
