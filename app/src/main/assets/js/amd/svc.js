@@ -382,6 +382,8 @@ app.svc = (function () {
             if(obj) {
                 authdat += "&" + jt.objdata(obj); }
             return authdat; },
+        noteUpdatedSongData: function (song) {
+            mgrs.loc.noteUpdatedSongData(song); },
         copyUpdatedSongData: function (song, updsong) {
             songfields.forEach(function (fld) {
                 if(updsong.hasOwnProperty(fld)) {  //don't copy undefined values
@@ -412,7 +414,11 @@ app.svc = (function () {
                                      contf(res); }, errf); },
         fanMessage: function (data, contf, errf) {
             mgrs.hc.queueRequest("fanmsg", "/fanmsg", "POST", data,
-                                 contf, errf); }
+                                 contf, errf); },
+        copyToClipboard: function (txt, contf, errf) {
+            if(Android.copyToClipboard(txt)) {
+                return contf(); }
+            errf(); }
     };  //end mgrs.gen returned functions
     }());
 
@@ -434,7 +440,6 @@ return {
     docContent: function (du, cf) { mgrs.gen.docContent(du, cf); },
     writeConfig: function (cfg, cf, ef) { mgrs.gen.writeConfig(cfg, cf, ef); },
     dispatch: function (mgrname, fname, ...args) {
-        console.log("svc.dispatch " + mgrname + " " + fname);
         return mgrs[mgrname][fname].apply(app.svc, args); }
 };  //end of returned functions
 }());

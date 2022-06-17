@@ -1,7 +1,10 @@
 package com.diggerhub.digger
 
 import android.Manifest.permission.READ_EXTERNAL_STORAGE
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.res.AssetManager
@@ -228,6 +231,20 @@ class DiggerAppInterface(private val context: MainActivity) {
         val inputStream = context.getAssets().open(path, ACCESS_BUFFER)
         val text = inputStream.bufferedReader().use { it.readText() }
         return text
+    }
+    @JavascriptInterface
+    fun copyToClipboard(text:String): String {
+        var retval = text
+        try {
+            val clipsvc = context.getSystemService(Context.CLIPBOARD_SERVICE)
+            val clipmgr = clipsvc as ClipboardManager
+            val clipdat = ClipData.newPlainText("label", text)
+            clipmgr.setPrimaryClip(clipdat)
+        } catch(e: Exception) {
+            Log.e("DiggerAppInterface", "Web request failed", e)
+            retval = ""
+        }
+        return retval
     }
 }
 
