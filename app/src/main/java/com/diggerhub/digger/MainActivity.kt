@@ -265,11 +265,14 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
         override fun onServiceConnected(name: ComponentName?,
                                         binder: IBinder?) {
             commok = true
-            //Log.d("DiggerASI", "ServiceConnection connected")
+            Log.d("DiggerASI", "ServiceConnection connected")
             val digbind = binder as DiggerAudioService.DiggerBinder
             val das = digbind.getService()
+            Log.d("DiggerASI", "das.failmsg: " + das.failmsg)
             state = ""  //always recheck state
-            if(das.mp == null) {
+            if(!das.failmsg.isEmpty()) {  //note crash
+                state = "failed " + das.failmsg }
+            else if(das.mp == null) {  //no player yet, caller retries
                 dur = 0
                 pos = 0 }
             else {  //have media player
@@ -349,22 +352,32 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
                     MediaPlayer.OnCompletionListener {
     var mp: MediaPlayer? = null
     var dst = ""   //most recently received Digger deck state
+    var failmsg = ""
 
     fun isostamp() : String {
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
         return sdf.format(Date())
     }
 
-    fun playSong(pathuri: Uri) {
+    fun dasPlaySong(pathuri: Uri) {
         val context = getApplicationContext()
         mp?.release()  //clean up any previously existing instance
         mp = MediaPlayer().apply {
-            setDataSource(context, pathuri)
-            setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
-            setOnPreparedListener(this@DiggerAudioService)
-            setOnErrorListener(this@DiggerAudioService)
-            setOnCompletionListener(this@DiggerAudioService)
-            prepareAsync() }  //release calling thread
+            dst = ""  //clear any previously saved deck state
+            failmsg = ""  //clear any previous failure
+            try {
+                setDataSource(context, pathuri)
+                setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+                setOnPreparedListener(this@DiggerAudioService)
+                setOnErrorListener(this@DiggerAudioService)
+                setOnCompletionListener(this@DiggerAudioService)
+                prepareAsync()  //release calling thread
+            } catch(e: Exception) {
+                //leave dst cleared, app will resend
+                Log.e("DiggerAS", "onStartCommand dasPlaySong failed.", e)
+                failmsg = "DiggerAudioService.onStartCommand path " + pathuri
+                Log.d("DiggerAS", "failmsg: " + failmsg)
+            } }
     }
 
     fun getNextSongPathFromState() : String {
@@ -425,8 +438,7 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
         if(intent != null) {  //might be null if restarted after being killed
             val pathuri = intent.data!!  //force Uri? to Uri
             Log.d("DiggerAS", "onStartCommand pathuri: " + pathuri)
-            dst = ""  //clear any previously saved deck state
-            playSong(pathuri) }
+            dasPlaySong(pathuri) }
         else {
             Log.d("DiggerAS", "onStartCommand null intent (restart)") }
         return android.app.Service.START_STICKY
@@ -465,7 +477,7 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
             val path = getNextSongPathFromState()
             if(!path.isEmpty()) {  //have next song to play
                 noteSongPlayed(path)
-                playSong(Uri.fromFile(File(path))) } }
+                dasPlaySong(Uri.fromFile(File(path))) } }
     }
 
     ////Required overrides for media content access

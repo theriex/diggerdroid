@@ -1,4 +1,4 @@
-/*global app, jt, Android */
+/*global app, jt, Android, console */
 /*jslint browser, white, long, unordered */
 
 //Server communications for Android platform
@@ -18,6 +18,7 @@ app.svc = (function () {
     mgrs.mp = (function () {
         var rqn = 0;
         var cq = [];
+        const mperrstat = "MediaPlayer error";
         function processNextCommand () {
             //result delivered in notePlaybackStatus callback
             Android.serviceInteraction(cq[0].cmd, cq[0].param, cq[0].cc); }
@@ -48,14 +49,19 @@ app.svc = (function () {
         playerFailure: function (err) {
             jt.log("mp.playerFailure: " + err);
             app.player.dispatch("mob", "handlePlayFailure",
-                                "Player error", err); },
+                                mperrstat, err); },
         notePlaybackStatus: function (stat) {
+            jt.log("svc.mp.notePlaybackStatus stat: " + JSON.stringify(stat));
             if(!cq.length) {
                 return jt.log("svc.mp.notePlaybackStatus cq empty"); }
             if(!stat.state) {  //indeterminate result, retry
                 setTimeout(processNextCommand, 200);
                 return jt.log("svc.mp.notePlaybackStatus retrying..."); }
-            jt.log("svc.mp.notePlaybackStatus " + JSON.stringify(stat));
+            if(stat.state.startsWith("failed")) {
+                jt.log("notePlaybackStatus server " + stat.state);
+                app.player.dispatch("mob", "handlePlayFailure",
+                                    mperrstat, stat.state);
+                return; }
             app.player.dispatch("mob", "notePlaybackStatus", stat);
             stat.song = app.player.song();
             Android.noteState("player", JSON.stringify(stat));
@@ -107,6 +113,7 @@ app.svc = (function () {
     //song database processing
     mgrs.sg = (function () {
         var dbstatdiv = "topdlgdiv";
+        var apresloadcmd = "";
     return {
         setArtistFromPath: function (song) {
             const pes = song.path.split("/");
@@ -165,15 +172,19 @@ app.svc = (function () {
             jt.out(dbstatdiv, "");
             app.top.markIgnoreSongs();
             app.top.rebuildKeywords();
-            app.deck.update("rebuildSongData"); },
-        loadLibrary: function (procdivid) {
+            app.deck.update("rebuildSongData");
+            if(apresloadcmd === "rebuild") {
+                app.player.next(); } },
+        loadLibrary: function (procdivid, apresload) {
             dbstatdiv = procdivid || "topdlgdiv";
+            apresloadcmd = apresload || "";
             jt.out(dbstatdiv, "Reading music...");
             Android.requestMediaRead(); },
         verifyDatabase: function (dbo) {
             var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
             if(stat.verified) { return dbo; }
-            jt.log("svc.db.verifyDatabase " + JSON.stringify(stat));
+            jt.log("svc.db.verifyDatabase re-initializing dbo, received " +
+                   JSON.stringify(stat));
             dbo = {version:Android.getAppVersion(),
                    scanned:"",  //ISO latest walk of song files
                    songcount:0,
@@ -181,7 +192,7 @@ app.svc = (function () {
                    //"artistFolder/albumFolder/disc#?/songFile"
                    songs:{}};
             return dbo; }
-    };  //end mgrs.db returned functions
+    };  //end mgrs.sg returned functions
     }());
 
 
@@ -348,6 +359,8 @@ app.svc = (function () {
                 app[uim].initialDataLoaded(startdata); });
             if(!dbo.scanned) {
                 setTimeout(mgrs.sg.loadLibrary, 50); } },
+        loadLibrary: function (procdivid) {
+            mgrs.sg.loadLibrary(procdivid); },
         hubSyncDat: function (data, contf, errf) {
             mgrs.hc.queueRequest("hubSyncDat", "/hubsync", "POST", data,
                                  function (res) {
@@ -440,6 +453,11 @@ return {
     docContent: function (du, cf) { mgrs.gen.docContent(du, cf); },
     writeConfig: function (cfg, cf, ef) { mgrs.gen.writeConfig(cfg, cf, ef); },
     dispatch: function (mgrname, fname, ...args) {
-        return mgrs[mgrname][fname].apply(app.svc, args); }
+        try {
+            return mgrs[mgrname][fname].apply(app.svc, args);
+        } catch(e) {
+            console.log("top.dispatch: " + mgrname + "." + fname + " " + e +
+                        " " + new Error("stack trace").stack);
+        } }
 };  //end of returned functions
 }());
