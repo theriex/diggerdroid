@@ -146,9 +146,9 @@ app.svc = (function () {
             dais.forEach(function (dai) {  //fill fields, make playback path
                 dai.artist = dai.artist || "Unknown";
                 dai.album = dai.album || "Singles";
-                if(dai.data) {  //prefer full path if available
+                if(dai.data) {  //prefer full path if available, need file URI.
                     dai.path = dai.data; }
-                else {
+                else {  //better than nothing, but file path unrecoverable
                     dai.path = dai.relpath + dai.dispname; } });
             return dais; },
         mediaReadComplete: function (err) {

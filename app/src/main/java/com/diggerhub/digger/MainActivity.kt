@@ -1,6 +1,9 @@
 package com.diggerhub.digger
 
 import android.Manifest.permission.READ_EXTERNAL_STORAGE
+import android.app.Notification
+import android.app.Service
+import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -25,6 +28,7 @@ import androidx.activity.result.contract.ActivityResultContracts.RequestPermissi
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
 import androidx.media.MediaBrowserServiceCompat
 import androidx.webkit.WebViewAssetLoader
 import com.diggerhub.digger.BuildConfig
@@ -93,6 +97,18 @@ class MainActivity : AppCompatActivity() {
         dwv.loadUrl("https://appassets.androidplatform.net/assets/index.html")
     }
 
+    override fun onDestroy() {
+        if(isFinishing()) {  //not just a rotation, really going away
+            Log.d("Digger", "onDestroy isFinishing, stopping service")
+            //stopService is defined in inherited android.content.Context
+            val exi = Intent("com.diggerhub.digger.DiggerAudioService")
+            val dcn = ComponentName(this,
+                                    "com.diggerhub.digger.DiggerAudioService")
+            exi.setComponent(dcn)
+            stopService(exi) }
+        super.onDestroy()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState?.run {
             putString("player", stateInfo.getString("player", ""))
@@ -133,9 +149,13 @@ class MainActivity : AppCompatActivity() {
                     jsonsb.append(jsonAV(key, cstrval(cursor, idx))) }
                 jsonsb.append("}") } }
         dais = "[" + jsonsb.toString() + "]"
+        Log.d("Digger", "queryAudio result: " + dais)
     }
 
     private fun fetchMusicData() {
+        Log.d("Digger", "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT +
+              " >= Build.VERSION_CODES.R " +
+              (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R))
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             queryAudio(mapOf(
                 "title" to MediaStore.Audio.Media.TITLE,
@@ -143,6 +163,7 @@ class MainActivity : AppCompatActivity() {
                 "album" to MediaStore.Audio.Media.ALBUM,
                 "track" to MediaStore.Audio.Media.TRACK,
                 "discnum" to MediaStore.Audio.Media.DISC_NUMBER,
+                "data" to MediaStore.Audio.Media.DATA,
                 "relpath" to MediaStore.Audio.Media.RELATIVE_PATH,
                 "dispname" to MediaStore.Audio.Media.DISPLAY_NAME)) }
         else {
@@ -312,7 +333,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
         command = svccommand
         param = svcparam
         reqnum = callnum
-        val exi = Intent("android.media.browse.MediaBrowserService")
+        val exi = Intent("com.diggerhub.digger.DiggerAudioService")
         exi.setComponent(dcn)
         //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
         val flags = 0
@@ -332,11 +353,14 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
 
     fun playSong(path: String) {
         Log.d("DiggerASI", "playSong " + path)
+        var songuri = Uri.fromFile(File(path))
         //launch DiggerAudioService via manifest intent-filter
-        val exi = Intent("android.media.browse.MediaBrowserService",
-                         Uri.fromFile(File(path)))
+        val exi = Intent("com.diggerhub.digger.DiggerAudioService", songuri)
         exi.setComponent(dcn)
-        try {  //if service already running, onStartCommand is called directly
+        try {
+            //If the service already running, onStartCommand is called directly.
+            //Don't need to call startForegroundService because only launching
+            //when app is in the foreground.
             context.startService(exi)
             state = "playing"
         } catch(e: Exception) {
@@ -346,11 +370,16 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
 }
 
 
-class DiggerAudioService : MediaBrowserServiceCompat(),
+//Prior to Oreo (API level 26 releaased 2017), you just started a service
+//and it continued even when the app was not in the foreground.  With Oreo,
+//you have to start a foreground service or the service will be stopped
+//after a few seconds of the app losing focus.
+class DiggerAudioService : Service(),
                     MediaPlayer.OnPreparedListener,
                     MediaPlayer.OnErrorListener,
                     MediaPlayer.OnCompletionListener {
     var mp: MediaPlayer? = null
+    var svcntf: Notification? = null
     var dst = ""   //most recently received Digger deck state
     var failmsg = ""
 
@@ -433,15 +462,42 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
         return binder
     }
 
+    override fun onCreate() {
+        super.onCreate();
+        val context = getApplicationContext()
+        val ntfi = Intent(".MainActivity")
+        //"if a task is already running for the activity you are now starting,
+        //then a new activity will not be started; instead, the current task
+        //will simply be brought to the front of the screen with the state it
+        //was last in."
+        ntfi.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        //if the described PendingIntent already exists, then keep it but
+        //replace its extra data with what is in this new Intent
+        val piflags = (PendingIntent.FLAG_UPDATE_CURRENT or
+        //Targeting S+ (version 31 and above) requires mutability flag
+                       PendingIntent.FLAG_IMMUTABLE)
+        val pndi = PendingIntent.getActivity(context,
+                                             0,   //requestCode
+                                             ntfi,
+                                             piflags)
+        NotificationCompat.Builder(context, "DiggerSvcChan").apply {
+            setContentTitle("Digger Music Service")
+            setContentText("Playing music matching your retrieval settings")
+            setSmallIcon(R.mipmap.ic_launcher)
+            setContentIntent(pndi)
+            svcntf = build() }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         //intent.action is declared in manifest and used by startService
-        if(intent != null) {  //might be null if restarted after being killed
+        if(intent != null) {
             val pathuri = intent.data!!  //force Uri? to Uri
             Log.d("DiggerAS", "onStartCommand pathuri: " + pathuri)
             dasPlaySong(pathuri) }
-        else {
+        else {  //null, service restarted after having been killed
             Log.d("DiggerAS", "onStartCommand null intent (restart)") }
-        return android.app.Service.START_STICKY
+        startForeground(1, svcntf)
+        return Service.START_STICKY  //please restart service after killing it
     }
 
     override fun onDestroy() {
@@ -477,19 +533,15 @@ class DiggerAudioService : MediaBrowserServiceCompat(),
             val path = getNextSongPathFromState()
             if(!path.isEmpty()) {  //have next song to play
                 noteSongPlayed(path)
-                dasPlaySong(Uri.fromFile(File(path))) } }
+                dasPlaySong(Uri.fromFile(File(path))) }
+            else {
+                Log.i("DiggerAudioService", "No path for next song, quitting.")
+                stopSelf() } }
+        else {
+            Log.i("DiggerAudioService", "No deck state, quitting.")
+            stopSelf() }
     }
 
-    ////Required overrides for media content access
-    override fun onGetRoot(@NonNull clientPackageName: String, clientUid: Int,
-                           @Nullable rootHints: Bundle?) : BrowserRoot? {
-        return null
-    }
-    override fun onLoadChildren(@NonNull parentId: String,
-                                @NonNull result: Result<MutableList<MediaItem>>
-                                ): Unit {
-        result.sendResult(mutableListOf<MediaItem>())
-    }
 }
 
 
