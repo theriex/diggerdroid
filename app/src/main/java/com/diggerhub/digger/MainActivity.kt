@@ -43,7 +43,9 @@ import java.util.Date
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
+    var uivs = "initializing"  //UI visibility status
     var dais = ""  //Digger Audio Information Summary
+    lateinit var jsai: DiggerAppInterface
     val stateInfo = Bundle()  //player and deck state info for view rebuild
     val execsvc: ExecutorService = Executors.newFixedThreadPool(2)
 
@@ -92,9 +94,33 @@ class MainActivity : AppCompatActivity() {
                       "${msg.lineNumber()} of ${msg.sourceId()}")
                 return true } }
         dwv.getSettings().setJavaScriptEnabled(true)
-        dwv.addJavascriptInterface(DiggerAppInterface(this), "Android")
+        jsai = DiggerAppInterface(this)
+        dwv.addJavascriptInterface(jsai, "Android")
         Log.d("Digger", "Loading index.html")
         dwv.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+        uivs = "visible"
+    }
+
+    override fun onStart() {
+        super.onStart()
+        uivs = "visible"
+    }
+
+    override fun onResume() {
+        super.onResume()
+        uivs = "visible"
+    }
+
+    override fun onPause() {
+        super.onPause()
+        uivs = "visible"  //webview updates still visible if split screen
+        jsai.decoupleService()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        uivs = "visible"  //webview updates can still happen in background
+        jsai.decoupleService()
     }
 
     override fun onDestroy() {
@@ -106,6 +132,7 @@ class MainActivity : AppCompatActivity() {
                                     "com.diggerhub.digger.DiggerAudioService")
             exi.setComponent(dcn)
             stopService(exi) }
+        uivs = "destroyed"
         super.onDestroy()
     }
 
@@ -180,9 +207,16 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-
+/***************************************************
+*
+* Pathways from the Digger web app back into supporting code.
+*
+***************************************************/
 class DiggerAppInterface(private val context: MainActivity) {
     private val asi = DiggerAudioServiceInterface(context)
+    fun decoupleService() {
+        asi.decoupleService()
+    }
     private fun readFile(file: File) : String {
         file.createNewFile()  //create a new empty file if no file exists
         val inputStream: InputStream = file.inputStream()
@@ -270,10 +304,17 @@ class DiggerAppInterface(private val context: MainActivity) {
 }
 
 
+/***************************************************
+*
+* Connect from the UI to the foreground music player service.  A separate
+* foreground service is required for the music to keep playing when the
+* activity is in the background.
+*
+***************************************************/
 class DiggerAudioServiceInterface(private val context: MainActivity) {
-    //must start the service first before trying to bind to it, otherwise it
-    //won't continue in the background.
     val dcn = ComponentName(context, "com.diggerhub.digger.DiggerAudioService")
+    var svccn = dcn
+    var svcbinder: IBinder? = null
     var command = ""
     var param = ""
     var reqnum = 0
@@ -285,71 +326,96 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
     val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?,
                                         binder: IBinder?) {
+            svccn = name ?: svccn
+            svcbinder = binder
             commok = true
-            Log.d("DiggerASI", "ServiceConnection connected")
+            //Log.d("DiggerASI", "ServiceConnection connected")
             val digbind = binder as DiggerAudioService.DiggerBinder
             val das = digbind.getService()
-            Log.d("DiggerASI", "das.failmsg: " + das.failmsg)
             state = ""  //always recheck state
             if(!das.failmsg.isEmpty()) {  //note crash
+                Log.d("DiggerASI", "das.failmsg: " + das.failmsg)
                 state = "failed " + das.failmsg }
             else if(das.mp == null) {  //no player yet, caller retries
                 dur = 0
                 pos = 0 }
             else {  //have media player
-                val mp = das.mp!!
-                when(command) {
-                    "status" -> {
-                        das.dst = param }
-                    "pause" -> {
-                        //Log.d("DiggerASI", "state set to paused")
-                        state = "paused"
-                        mp.pause() }
-                   "resume" -> {
-                       //Log.d("DiggerASI", "state set to playing")
-                       state = "playing"
-                       mp.start() }
-                   "seek" -> mp.seekTo(param.toInt())
-                   else -> {
-                       Log.d("DiggerASI", "unknown command " + command) } }
-                dur = mp.getDuration()
-                pos = mp.getCurrentPosition()
-                if(dur - pos <= 4000) {  //if 4 secs or less from end
-                    das.dst = "" }       //turn off service autoplay
-                if(state.isEmpty()) {
-                    Log.d("DiggerASI", "retrieving state from mp.isPlaying")
-                    if(mp.isPlaying()) {
-                        state = "playing" }
-                    else {
-                        state = "paused" } } }
-        }
+                try {
+                    val mp = das.mp!!
+                    when(command) {
+                        "status" -> {
+                            das.dst = param }
+                        "pause" -> {
+                            //Log.d("DiggerASI", "state set to paused")
+                            state = "paused"
+                            mp.pause() }
+                       "resume" -> {
+                           //Log.d("DiggerASI", "state set to playing")
+                           state = "playing"
+                           mp.start() }
+                       "seek" -> mp.seekTo(param.toInt())
+                       else -> {
+                           Log.d("DiggerASI", "unknown command " + command) } }
+                    dur = mp.getDuration()
+                    pos = mp.getCurrentPosition()
+                    if(dur - pos <= 4000) {  //if 4 secs or less from end
+                        das.dst = "" }       //turn off service autoplay
+                    if(state.isEmpty()) {
+                        Log.d("DiggerASI", "retrieving state from mp.isPlaying")
+                        if(mp.isPlaying()) {
+                            state = "playing" }
+                        else {
+                            state = "paused" } }
+                } catch(e: Exception) {
+                    state = ""  //return indeterminate if anything went wrong
+                    Log.e("Digger", "ServiceConnection mp failure ", e)
+                } }
+        }  //end onServiceConnected
         override fun onServiceDisconnected(name: ComponentName?) {
             Log.d("Digger", "ServiceConnection disconnected")
         } }
 
 
+    fun decoupleService() {
+        if(svcbinder != null) {
+            context.unbindService(connection)
+            var svccn = dcn
+            svcbinder = null }
+    }
+
+
+    //Returning an empty string indeterminate state value is an indication
+    //the call couldn't be completed and the caller should retry.
     fun svcexec(svccommand:String, svcparam:String, callnum:Int) {
         //Log.d("DiggerASI", "svcexec " + svccommand)
         command = svccommand
         param = svcparam
         reqnum = callnum
-        val exi = Intent("com.diggerhub.digger.DiggerAudioService")
-        exi.setComponent(dcn)
-        //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
-        val flags = 0
-        val bindok = context.bindService(exi, connection, flags)
-        context.unbindService(connection)  //always unbind even if bind failed
-        if(!bindok) {
-            Log.d("DiggerASI", "could not bind to service")
-            state = ""; }  //return indeterminate state, caller can retry
-        if(!commok) {
-            //Log.d("DiggerASI", "binding service did not connect")
-            state = ""; }  //return indeterminate state so caller can retry
+        if(context.uivs != "visible") {
+            state = "failed: MainActivity " + context.uivs }
+        else {  //UI is visible
+            if(svcbinder != null) {
+                connection.onServiceConnected(svccn, svcbinder) }
+            else {
+                val exi = Intent("com.diggerhub.digger.DiggerAudioService")
+                exi.setComponent(dcn)
+                //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
+                val flags = 0
+                val bindok = context.bindService(exi, connection, flags)
+                if(!bindok) {
+                    Log.d("DiggerASI", "could not bind to service")
+                    context.unbindService(connection)  //unbind just in case
+                    state = ""; } } //return indeterminate
+            if(!commok) {
+                decoupleService()
+                //Log.d("DiggerASI", "binding service did not connect")
+                state = ""; } }  //return indeterminate state
         commok = false  //reset for next call
         val statobj = "{state:\"$state\", pos:$pos, dur:$dur, cc:$reqnum}"
         val callback = "app.svc.notePlaybackStatus($statobj)"
         context.runOnUiThread(Runnable() { context.djs(callback) })
     }
+
 
     fun playSong(path: String) {
         Log.d("DiggerASI", "playSong " + path)
@@ -370,10 +436,14 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
 }
 
 
-//Prior to Oreo (API level 26 releaased 2017), you just started a service
-//and it continued even when the app was not in the foreground.  With Oreo,
-//you have to start a foreground service or the service will be stopped
-//after a few seconds of the app losing focus.
+/***************************************************
+*
+* Digger music player service.  Prior to Oreo (API level 26 releaased 2017),
+* you just started a service and it continued even when the app was not in
+* the foreground.  With Oreo, you have to start a foreground service or the
+* service will be stopped after a few seconds of the app losing focus.
+*
+***************************************************/
 class DiggerAudioService : Service(),
                     MediaPlayer.OnPreparedListener,
                     MediaPlayer.OnErrorListener,
@@ -503,6 +573,7 @@ class DiggerAudioService : Service(),
     override fun onDestroy() {
         super.onDestroy()
         mp?.release()
+        mp = null
     }
 
     ////media player listener interface
@@ -545,6 +616,11 @@ class DiggerAudioService : Service(),
 }
 
 
+/***************************************************
+*
+* Connect from the UI to DiggerHub.
+*
+***************************************************/
 class HubWebRequest(private val context: MainActivity,
                     private val qname: String,
                     private val reqnum: Int,
