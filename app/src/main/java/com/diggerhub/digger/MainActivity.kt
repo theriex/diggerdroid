@@ -552,7 +552,7 @@ class DiggerAudioService : Service(),
                                              piflags)
         NotificationCompat.Builder(context, "DiggerSvcChan").apply {
             setContentTitle("Digger Music Service")
-            setContentText("Playing music matching your retrieval settings")
+            setContentText("Playing your matching songs.")
             setSmallIcon(R.mipmap.ic_launcher)
             setContentIntent(pndi)
             svcntf = build() }
