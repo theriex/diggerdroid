@@ -105,23 +105,30 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         uivs = "visible"
+        val dwv: WebView = findViewById(R.id.webview)
+        dwv.resumeTimers()
     }
 
     override fun onResume() {
         super.onResume()
         uivs = "visible"
+        //service still coupled and timers still active
     }
 
     override fun onPause() {
         super.onPause()
         uivs = "visible"  //webview updates still visible if split screen
-        jsai.decoupleService()
+        //leave service coupled for progress updates and responsive controls
+        //do not pauseTimers. UI progress updates continue to be displayed.
     }
 
     override fun onStop() {
         super.onStop()
-        uivs = "visible"  //webview updates can still happen in background
+        uivs = "visible"  //webview still considered visible, allow calls
+        //reduce load to minimum, player service is essentially on its own.
         jsai.decoupleService()
+        val dwv: WebView = findViewById(R.id.webview)
+        dwv.pauseTimers()
     }
 
     override fun onDestroy() {
