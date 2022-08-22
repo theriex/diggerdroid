@@ -20,10 +20,12 @@ app.svc = (function () {
         var cq = [];
         const mperrstat = "MediaPlayer error";
         function processNextCommand () {
+            if(!cq || !cq.length) { return; }  //queue previously cleared
             //result delivered in notePlaybackStatus callback
             Android.serviceInteraction(cq[0].cmd, cq[0].param, cq[0].cc); }
         function queueCommand (command, parameter) {
             if(cq.length && cq[cq.length - 1].cmd === command) {
+                cq[cq.length - 1].param = parameter || "";
                 return jt.log("svc.mp.queueCommand " + command +
                               " already queued for processing."); }
             rqn += 1;
@@ -33,7 +35,9 @@ app.svc = (function () {
                 processNextCommand(); } }
     return {
         requestStatusUpdate: function (/*contf*/) {
-            var dst = app.deck.getState(200);  //6+ hrs worth
+            var qm = 200;  //200 songs is generally 6+ hrs worth
+            qm = app.player.dispatch("slp", "limitToSleepQueueMax", qm);
+            const dst = app.deck.getState(qm);  //songs currently on deck
             queueCommand("status", JSON.stringify(dst)); },
         pause: function () { queueCommand("pause"); },
         resume: function () { queueCommand("resume"); },
@@ -273,6 +277,7 @@ app.svc = (function () {
                     mgrs.hw.updateLocalSong(dbo, s); });
                 mgrs.loc.writeSongs(); } },
         procSyncData: function (res) {  //hub.js processReceivedSyncData
+            app.player.logCurrentlyPlaying("svc.hw.procSyncData");
             const updacc = res[0];
             updacc.diggerVersion = Android.getAppVersion();
             mgrs.usr.noteUpdatedAccount(updacc);
@@ -366,10 +371,11 @@ app.svc = (function () {
                                  function (res) {
                                      res = mgrs.hw.procSyncData(res);
                                      contf(res); }, errf); },
-        noteUpdatedSongData: function (/*updsong*/) {
+        noteUpdatedSongData: function (updsong) {
             //on Android the local database has already been updated, and
-            //local memory is up to date, so this callback should be ignored
-            return; },
+            //local memory is up to date.
+            app.player.dispatch("mob", "rebuildIfSongPlaying", updsong);
+            app.deck.dispatch("ws", "rebuild", "noteUpdatedSongData"); },
         makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
             mgrs.hc.queueRequest(endpoint, "/" + endpoint, verb, data,
                                  contf, errf); }

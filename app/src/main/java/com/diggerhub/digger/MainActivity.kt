@@ -72,6 +72,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(inState: Bundle?) {
         super.onCreate(inState)
+        Log.d("Digger", "MainActivity onCreate *******************************")
         inState?.run {  //restore state information if given
             stateInfo.putString("player", inState.getString("player", ""))
             stateInfo.putString("deck", inState.getString("deck", "")) }
@@ -320,6 +321,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
     var reqnum = 0
     var dur = 0
     var pos = 0
+    var path = ""
     var state = ""    //"playing" or "paused"
     var commok = false
 
@@ -332,11 +334,13 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
             //Log.d("DiggerASI", "ServiceConnection connected")
             val digbind = binder as DiggerAudioService.DiggerBinder
             val das = digbind.getService()
+            das.cts = System.currentTimeMillis()  //update UI comm timestamp
             state = ""  //always recheck state
             if(!das.failmsg.isEmpty()) {  //note crash
                 Log.d("DiggerASI", "das.failmsg: " + das.failmsg)
                 state = "failed " + das.failmsg }
             else if(das.mp == null) {  //no player yet, caller retries
+                path = ""
                 dur = 0
                 pos = 0 }
             else {  //have media player
@@ -356,10 +360,9 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                        "seek" -> mp.seekTo(param.toInt())
                        else -> {
                            Log.d("DiggerASI", "unknown command " + command) } }
+                    path = das.playpath
                     dur = mp.getDuration()
                     pos = mp.getCurrentPosition()
-                    if(dur - pos <= 4000) {  //if 4 secs or less from end
-                        das.dst = "" }       //turn off service autoplay
                     if(state.isEmpty()) {
                         Log.d("DiggerASI", "retrieving state from mp.isPlaying")
                         if(mp.isPlaying()) {
@@ -384,7 +387,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
     }
 
 
-    //Returning an empty string indeterminate state value is an indication
+    //Returning an indeterminate state value empty string is an indication
     //the call couldn't be completed and the caller should retry.
     fun svcexec(svccommand:String, svcparam:String, callnum:Int) {
         //Log.d("DiggerASI", "svcexec " + svccommand)
@@ -411,7 +414,9 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                 //Log.d("DiggerASI", "binding service did not connect")
                 state = ""; } }  //return indeterminate state
         commok = false  //reset for next call
-        val statobj = "{state:\"$state\", pos:$pos, dur:$dur, cc:$reqnum}"
+        val encpath = java.net.URLEncoder.encode(path, "utf-8")
+        val statobj = ("{state:\"$state\", pos:$pos, dur:$dur" +
+                       ", path:\"$encpath\", cc:$reqnum}")
         val callback = "app.svc.notePlaybackStatus($statobj)"
         context.runOnUiThread(Runnable() { context.djs(callback) })
     }
@@ -419,7 +424,9 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
 
     fun playSong(path: String) {
         Log.d("DiggerASI", "playSong " + path)
+        //Log.d("DiggerASI", "playSong File: " + File(path))
         var songuri = Uri.fromFile(File(path))
+        //Log.d("DiggerASI", "playSong URI: " + songuri)
         //launch DiggerAudioService via manifest intent-filter
         val exi = Intent("com.diggerhub.digger.DiggerAudioService", songuri)
         exi.setComponent(dcn)
@@ -451,7 +458,9 @@ class DiggerAudioService : Service(),
     var mp: MediaPlayer? = null
     var svcntf: Notification? = null
     var dst = ""   //most recently received Digger deck state
+    var cts = System.currentTimeMillis()  //most recent UI communication time
     var failmsg = ""
+    var playpath = ""
 
     fun isostamp() : String {
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
@@ -463,8 +472,10 @@ class DiggerAudioService : Service(),
         mp?.release()  //clean up any previously existing instance
         mp = MediaPlayer().apply {
             dst = ""  //clear any previously saved deck state
+            cts = System.currentTimeMillis()  //update UI communication time
             failmsg = ""  //clear any previous failure
             try {
+                playpath = pathuri.toString();
                 setDataSource(context, pathuri)
                 setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
                 setOnPreparedListener(this@DiggerAudioService)
@@ -473,6 +484,7 @@ class DiggerAudioService : Service(),
                 prepareAsync()  //release calling thread
             } catch(e: Exception) {
                 //leave dst cleared, app will resend
+                playpath = ""
                 Log.e("DiggerAS", "onStartCommand dasPlaySong failed.", e)
                 failmsg = "DiggerAudioService.onStartCommand path " + pathuri
                 Log.d("DiggerAS", "failmsg: " + failmsg)
@@ -576,11 +588,12 @@ class DiggerAudioService : Service(),
         mp = null
     }
 
-    ////media player listener interface
+    //MediaPlayer.OnPreparedListener interface
     override fun onPrepared(mediaPlayer: MediaPlayer) {
         mp?.start()  //question mark is from doc example. Probably right.
     }
 
+    //MediaPlayer.OnErrorListener interface
     override fun onError(ignore: MediaPlayer, what: Int, extra: Int): Boolean {
         val stat = when(what) {
             MediaPlayer.MEDIA_ERROR_SERVER_DIED -> "Server died"
@@ -596,9 +609,11 @@ class DiggerAudioService : Service(),
         return false  //triggers call to OnCompletionListener
     }
 
+    //MediaPlayer.OnCompletionListener interface
     override fun onCompletion(ignore: MediaPlayer) {
-        //background Digger continues to next song, so this should only get
-        //called if the activity was killed while the service continues.
+        val now = System.currentTimeMillis()
+        if((now - cts) < 5000) {  //UI has been in contact recently
+            return }              //assume it will handle playing the next song
         if(!dst.isEmpty()) {  //have state info, start autoplay
             Log.d("DiggerAudioService", "onCompletion autoplay " + isostamp())
             val path = getNextSongPathFromState()
