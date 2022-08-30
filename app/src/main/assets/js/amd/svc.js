@@ -306,7 +306,16 @@ app.svc = (function () {
             setAndWriteConfig(config);
             setTimeout(function () { contf(config.acctsinfo); }, 50); },
         getDatabase: function () { return dbo; },
-        songs: function () { return dbo.songs; },
+        songs: function (cmd) {
+            if(cmd === "reload") {
+                jt.log("svc.loc.songs reloading dbo...");
+                try {
+                    dbo = JSON.parse(Android.readDigDat() || "{}"); }
+                catch(e) {
+                    return jt.err("songs reload failed: " + e); }
+                jt.log("svc.loc.songs dbo reloaded.");
+                dbo = mgrs.sg.verifyDatabase(dbo); }
+            return dbo.songs; },
         fetchSongs: function (contf/*, errf*/) {  //call stack as if web call
             setTimeout(function () { contf(dbo.songs); }, 50); },
         fetchAlbum: function (song, contf/*, errf*/) {
@@ -348,7 +357,7 @@ app.svc = (function () {
             //background fails to load. Set explicitely so things are visible:
             const cssbg = "url('" + app.dr("/img/panelsbg.png") + "')";
             jt.byId("contentdiv").style.backgroundImage = cssbg;
-            mgrs.loc.restoreState();
+            mgrs.loc.restoreState();  //remember previous state before reload
             try {
                 config = JSON.parse(Android.readConfig() || "{}");
                 dbo = JSON.parse(Android.readDigDat() || "{}"); }
@@ -445,7 +454,7 @@ app.svc = (function () {
 return {
     init: function () { mgrs.gen.initialize(); },
     plat: function (key) { return mgrs.gen.plat(key); },
-    songs: function () { return mgrs.loc.songs(); },
+    songs: function (cmd) { return mgrs.loc.songs(cmd); },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
     updateSong: function (song, cf, ef) { mgrs.loc.updateSong(song, cf, ef); },

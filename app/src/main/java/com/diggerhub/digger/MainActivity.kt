@@ -538,7 +538,7 @@ class DiggerAudioService : Service(),
         song.put("pc", pc + 1)
         song.put("lp", isostamp())
         songs.put(path, song)
-        dat.put("songs", song)
+        dat.put("songs", songs)
         ddf.writeText(dat.toString())
     }
 
