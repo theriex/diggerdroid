@@ -539,7 +539,7 @@ class DiggerAudioService : Service(),
         song.put("lp", isostamp())
         songs.put(path, song)
         dat.put("songs", songs)
-        ddf.writeText(dat.toString())
+        ddf.writeText(dat.toString(2))  //human readable 2 indent spaces
     }
 
     val binder = DiggerBinder()
