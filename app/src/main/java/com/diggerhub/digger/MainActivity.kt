@@ -104,6 +104,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        Log.d("Digger", "MainActivity onStart called")
         uivs = "visible"
         val dwv: WebView = findViewById(R.id.webview)
         dwv.resumeTimers()
@@ -111,12 +112,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        Log.d("Digger", "MainActivity onResume called")
         uivs = "visible"
         //service still coupled and timers still active
     }
 
     override fun onPause() {
         super.onPause()
+        Log.d("Digger", "MainActivity onPause called")
         uivs = "visible"  //webview updates still visible if split screen
         //leave service coupled for progress updates and responsive controls
         //do not pauseTimers. UI progress updates continue to be displayed.
@@ -124,6 +127,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        Log.d("Digger", "MainActivity onStop called")
         uivs = "visible"  //webview still considered visible, allow calls
         //reduce load to minimum, player service is essentially on its own.
         jsai.decoupleService()
@@ -132,6 +136,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        Log.d("Digger", "MainActivity onDestroy called")
         if(isFinishing()) {  //not just a rotation, really going away
             Log.d("Digger", "onDestroy isFinishing, stopping service")
             //stopService is defined in inherited android.content.Context
@@ -554,21 +559,14 @@ class DiggerAudioService : Service(),
     override fun onCreate() {
         super.onCreate();
         val context = getApplicationContext()
-        val ntfi = Intent(".MainActivity")
-        //"if a task is already running for the activity you are now starting,
-        //then a new activity will not be started; instead, the current task
-        //will simply be brought to the front of the screen with the state it
-        //was last in."
-        ntfi.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        //if the described PendingIntent already exists, then keep it but
-        //replace its extra data with what is in this new Intent
-        val piflags = (PendingIntent.FLAG_UPDATE_CURRENT or
-        //Targeting S+ (version 31 and above) requires mutability flag
-                       PendingIntent.FLAG_IMMUTABLE)
-        val pndi = PendingIntent.getActivity(context,
-                                             0,   //requestCode
-                                             ntfi,
-                                             piflags)
+        val pndi = PendingIntent.getActivity(
+            context,
+            0,   //requestCode
+            Intent("com.diggerhub.digger.MainActivity"),
+            //Targeting S+ (version 31 and above) requires mutability flag
+            (PendingIntent.FLAG_IMMUTABLE or
+             PendingIntent.FLAG_UPDATE_CURRENT))
+        //DiggerSvcChan is a unique channel name created in DiggerApp.
         NotificationCompat.Builder(context, "DiggerSvcChan").apply {
             setContentTitle("Digger Music Service")
             setContentText("Playing your matching songs.")
