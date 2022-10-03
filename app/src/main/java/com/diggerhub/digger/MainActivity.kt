@@ -43,6 +43,7 @@ import java.util.Date
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
+    val lognm = "DiggerMain"
     var uivs = "initializing"  //UI visibility status
     var dais = ""  //Digger Audio Information Summary
     lateinit var jsai: DiggerAppInterface
@@ -61,18 +62,18 @@ class MainActivity : AppCompatActivity() {
 
     //digger javascript to run in the webview
     fun djs(jstxt: String) {
-        //Log.d("Digger", "djs: " + jstxt)
+        //Log.d(lognm, "djs: " + jstxt)
         val dwv: WebView = findViewById(R.id.webview)
         try {
             dwv.evaluateJavascript(jstxt, null)
         } catch(e: Exception) {
-            Log.e("Digger", "eval js failed", e)
+            Log.e(lognm, "eval js failed", e)
         }
     }
 
     override fun onCreate(inState: Bundle?) {
         super.onCreate(inState)
-        Log.d("Digger", "MainActivity onCreate *******************************")
+        Log.d(lognm, "MainActivity onCreate *******************************")
         inState?.run {  //restore state information if given
             stateInfo.putString("player", inState.getString("player", ""))
             stateInfo.putString("deck", inState.getString("deck", "")) }
@@ -97,14 +98,14 @@ class MainActivity : AppCompatActivity() {
         dwv.getSettings().setJavaScriptEnabled(true)
         jsai = DiggerAppInterface(this)
         dwv.addJavascriptInterface(jsai, "Android")
-        Log.d("Digger", "Loading index.html")
+        Log.d(lognm, "Loading index.html")
         dwv.loadUrl("https://appassets.androidplatform.net/assets/index.html")
         uivs = "visible"
     }
 
     override fun onStart() {
         super.onStart()
-        Log.d("Digger", "MainActivity onStart called")
+        Log.d(lognm, "MainActivity onStart called")
         uivs = "visible"
         val dwv: WebView = findViewById(R.id.webview)
         dwv.resumeTimers()
@@ -112,14 +113,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        Log.d("Digger", "MainActivity onResume called")
+        Log.d(lognm, "MainActivity onResume called")
         uivs = "visible"
         //service still coupled and timers still active
     }
 
     override fun onPause() {
         super.onPause()
-        Log.d("Digger", "MainActivity onPause called")
+        Log.d(lognm, "MainActivity onPause called")
         uivs = "visible"  //webview updates still visible if split screen
         //leave service coupled for progress updates and responsive controls
         //do not pauseTimers. UI progress updates continue to be displayed.
@@ -127,7 +128,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        Log.d("Digger", "MainActivity onStop called")
+        Log.d(lognm, "MainActivity onStop called")
         uivs = "visible"  //webview still considered visible, allow calls
         //reduce load to minimum, player service is essentially on its own.
         jsai.decoupleService()
@@ -136,9 +137,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        Log.d("Digger", "MainActivity onDestroy called")
+        Log.d(lognm, "MainActivity onDestroy called")
         if(isFinishing()) {  //not just a rotation, really going away
-            Log.d("Digger", "onDestroy isFinishing, stopping service")
+            Log.d(lognm, "onDestroy isFinishing, stopping service")
             //stopService is defined in inherited android.content.Context
             val exi = Intent("com.diggerhub.digger.DiggerAudioService")
             val dcn = ComponentName(this,
@@ -189,11 +190,11 @@ class MainActivity : AppCompatActivity() {
                     jsonsb.append(jsonAV(key, cstrval(cursor, idx))) }
                 jsonsb.append("}") } }
         dais = "[" + jsonsb.toString() + "]"
-        Log.d("Digger", "queryAudio result: " + dais)
+        Log.d(lognm, "queryAudio result: " + dais)
     }
 
     private fun fetchMusicData() {
-        Log.d("Digger", "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT +
+        Log.d(lognm, "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT +
               " >= Build.VERSION_CODES.R " +
               (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R))
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -226,6 +227,7 @@ class MainActivity : AppCompatActivity() {
 *
 ***************************************************/
 class DiggerAppInterface(private val context: MainActivity) {
+    val lognm = "DiggerAppInterface"
     private val asi = DiggerAudioServiceInterface(context)
     fun decoupleService() {
         asi.decoupleService()
@@ -291,7 +293,7 @@ class DiggerAppInterface(private val context: MainActivity) {
                                          endpoint, verb, data)
                 context.execsvc.execute(callinfo)
         } catch(e: Exception) {
-            Log.e("DiggerAppInterface", "Web request failed", e)
+            Log.e(lognm, "Web request failed", e)
         }
     }
     @JavascriptInterface
@@ -309,7 +311,7 @@ class DiggerAppInterface(private val context: MainActivity) {
             val clipdat = ClipData.newPlainText("label", text)
             clipmgr.setPrimaryClip(clipdat)
         } catch(e: Exception) {
-            Log.e("DiggerAppInterface", "Web request failed", e)
+            Log.e(lognm, "Web request failed", e)
             retval = ""
         }
         return retval
@@ -325,8 +327,9 @@ class DiggerAppInterface(private val context: MainActivity) {
 *
 ***************************************************/
 class DiggerAudioServiceInterface(private val context: MainActivity) {
+    val lognm = "DiggerASI"
     val dcn = ComponentName(context, "com.diggerhub.digger.DiggerAudioService")
-    var svccn = dcn
+    var svccn = dcn   //service connection name
     var svcbinder: IBinder? = null
     var command = ""
     var param = ""
@@ -334,7 +337,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
     var dur = 0
     var pos = 0
     var path = ""
-    var state = ""    //"playing" or "paused"
+    var sipbst = ""    //service interface playback state
     var commok = false
 
     val connection = object : ServiceConnection {
@@ -343,14 +346,14 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
             svccn = name ?: svccn
             svcbinder = binder
             commok = true
-            //Log.d("DiggerASI", "ServiceConnection connected")
+            //Log.d(lognm, "ServiceConnection connected")
             val digbind = binder as DiggerAudioService.DiggerBinder
             val das = digbind.getService()
             das.cts = System.currentTimeMillis()  //update UI comm timestamp
-            state = ""  //always recheck state
+            sipbst = ""  //always recheck state
             if(!das.failmsg.isEmpty()) {  //note crash
-                Log.d("DiggerASI", "das.failmsg: " + das.failmsg)
-                state = "failed " + das.failmsg }
+                Log.d(lognm, "das.failmsg: " + das.failmsg)
+                sipbst = "failed " + das.failmsg }
             else if(das.mp == null) {  //no player yet, caller retries
                 path = ""
                 dur = 0
@@ -360,34 +363,34 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                     val mp = das.mp!!
                     when(command) {
                         "status" -> {
+                            Log.d(lognm, "das.dst updated")
                             das.dst = param }
                         "pause" -> {
-                            //Log.d("DiggerASI", "state set to paused")
-                            state = "paused"
+                            sipbst = "paused"
                             mp.pause() }
                        "resume" -> {
-                           //Log.d("DiggerASI", "state set to playing")
-                           state = "playing"
+                           sipbst = "playing"
                            mp.start() }
                        "seek" -> mp.seekTo(param.toInt())
                        else -> {
-                           Log.d("DiggerASI", "unknown command " + command) } }
+                           Log.d(lognm, "unknown command " + command) } }
                     path = das.playpath
                     dur = mp.getDuration()
                     pos = mp.getCurrentPosition()
-                    if(state.isEmpty()) {
-                        Log.d("DiggerASI", "retrieving state from mp.isPlaying")
-                        if(mp.isPlaying()) {
-                            state = "playing" }
+                    if(sipbst.isEmpty()) {  //figure out sipbst from service
+                        if(das.pbstate == "ended") {
+                            sipbst = "ended" }
+                        else if(mp.isPlaying()) {
+                            sipbst = "playing" }
                         else {
-                            state = "paused" } }
+                            sipbst = "paused" } }
                 } catch(e: Exception) {
-                    state = ""  //return indeterminate if anything went wrong
-                    Log.e("Digger", "ServiceConnection mp failure ", e)
+                    sipbst = ""  //return indeterminate if anything went wrong
+                    Log.e(lognm, "ServiceConnection mp failure ", e)
                 } }
         }  //end onServiceConnected
         override fun onServiceDisconnected(name: ComponentName?) {
-            Log.d("Digger", "ServiceConnection disconnected")
+            Log.d(lognm, "ServiceConnection disconnected")
         } }
 
 
@@ -402,12 +405,12 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
     //Returning an indeterminate state value empty string is an indication
     //the call couldn't be completed and the caller should retry.
     fun svcexec(svccommand:String, svcparam:String, callnum:Int) {
-        //Log.d("DiggerASI", "svcexec " + svccommand)
+        //Log.d(lognm, "svcexec " + svccommand)
         command = svccommand
         param = svcparam
         reqnum = callnum
         if(context.uivs != "visible") {
-            state = "failed: MainActivity " + context.uivs }
+            sipbst = "failed: MainActivity " + context.uivs }
         else {  //UI is visible
             if(svcbinder != null) {
                 connection.onServiceConnected(svccn, svcbinder) }
@@ -418,16 +421,16 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                 val flags = 0
                 val bindok = context.bindService(exi, connection, flags)
                 if(!bindok) {
-                    Log.d("DiggerASI", "could not bind to service")
+                    Log.d(lognm, "could not bind to service")
                     context.unbindService(connection)  //unbind just in case
-                    state = ""; } } //return indeterminate
+                    sipbst = ""; } }
             if(!commok) {
                 decoupleService()
-                //Log.d("DiggerASI", "binding service did not connect")
-                state = ""; } }  //return indeterminate state
+                //Log.d(lognm, "binding service did not connect")
+                sipbst = ""; } }
         commok = false  //reset for next call
         val encpath = java.net.URLEncoder.encode(path, "utf-8")
-        val statobj = ("{state:\"$state\", pos:$pos, dur:$dur" +
+        val statobj = ("{state:\"$sipbst\", pos:$pos, dur:$dur" +
                        ", path:\"$encpath\", cc:$reqnum}")
         val callback = "app.svc.notePlaybackStatus($statobj)"
         context.runOnUiThread(Runnable() { context.djs(callback) })
@@ -435,10 +438,10 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
 
 
     fun playSong(path: String) {
-        Log.d("DiggerASI", "playSong " + path)
-        //Log.d("DiggerASI", "playSong File: " + File(path))
+        Log.d(lognm, "playSong " + path)
+        //Log.d(lognm, "playSong File: " + File(path))
         var songuri = Uri.fromFile(File(path))
-        //Log.d("DiggerASI", "playSong URI: " + songuri)
+        //Log.d(lognm, "playSong URI: " + songuri)
         //launch DiggerAudioService via manifest intent-filter
         val exi = Intent("com.diggerhub.digger.DiggerAudioService", songuri)
         exi.setComponent(dcn)
@@ -447,10 +450,10 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
             //Don't need to call startForegroundService because only launching
             //when app is in the foreground.
             context.startService(exi)
-            state = "playing"
+            sipbst = "playing"
         } catch(e: Exception) {
             //can't djs because still executing failed call
-            Log.e("Digger", "playSong failed", e) }
+            Log.e(lognm, "playSong failed", e) }
     }
 }
 
@@ -467,8 +470,11 @@ class DiggerAudioService : Service(),
                     MediaPlayer.OnPreparedListener,
                     MediaPlayer.OnErrorListener,
                     MediaPlayer.OnCompletionListener {
+    val lognm = "DiggerAudioService"
     var mp: MediaPlayer? = null
     var svcntf: Notification? = null
+    //Playback state variables accessed locally and by DiggerASI
+    var pbstate = "init"  //"playing"/"paused"/"ended"/"failed"
     var dst = ""   //most recently received Digger deck state
     var cts = System.currentTimeMillis()  //most recent UI communication time
     var failmsg = ""
@@ -494,18 +500,21 @@ class DiggerAudioService : Service(),
                 setOnErrorListener(this@DiggerAudioService)
                 setOnCompletionListener(this@DiggerAudioService)
                 prepareAsync()  //release calling thread
+                pbstate = "playing"
             } catch(e: Exception) {
                 //leave dst cleared, app will resend
                 playpath = ""
-                Log.e("DiggerAS", "onStartCommand dasPlaySong failed.", e)
+                Log.e(lognm, "onStartCommand dasPlaySong failed.", e)
                 failmsg = "DiggerAudioService.onStartCommand path " + pathuri
-                Log.d("DiggerAS", "failmsg: " + failmsg)
+                Log.d(lognm, "failmsg: " + failmsg)
+                pbstate = "failed"
             } }
     }
 
     fun getNextSongPathFromState() : String {
         val dso = JSONObject(dst)
         val disp = dso.getString("disp")
+        Log.d(lognm, "getNextSongPathFromState disp: " + disp)
         if(disp == "album") {
             val det = dso.getJSONObject("det")
             val info = det.getJSONObject("info")
@@ -519,15 +528,19 @@ class DiggerAudioService : Service(),
                 det.put("info", info)
                 dso.put("det", det)
                 dst = dso.toString()
+                Log.d(lognm, "  album path: " + path)
                 return path }
+            Log.d(lognm, "  No songs left on album")
             return "" }
         val det = dso.getJSONArray("det")
         if(det.length() == 0) {
+            Log.d(lognm, "  No songs left on deck")
             return "" }
         val song = det.remove(0) as JSONObject
         val path = song.getString("path")
         dso.put("det", det)
         dst = dso.toString()
+        Log.d(lognm, "  deck path: " + path)
         return path
     }
 
@@ -573,16 +586,20 @@ class DiggerAudioService : Service(),
             setSmallIcon(R.mipmap.ic_launcher)
             setContentIntent(pndi)
             svcntf = build() }
+        pbstate = "init"
+        dst = ""
+        failmsg = ""
+        playpath = ""
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         //intent.action is declared in manifest and used by startService
         if(intent != null) {
             val pathuri = intent.data!!  //force Uri? to Uri
-            Log.d("DiggerAS", "onStartCommand pathuri: " + pathuri)
+            Log.d(lognm, "onStartCommand pathuri: " + pathuri)
             dasPlaySong(pathuri) }
         else {  //null, service restarted after having been killed
-            Log.d("DiggerAS", "onStartCommand null intent (restart)") }
+            Log.d(lognm, "onStartCommand null intent (restart)") }
         startForeground(1, svcntf)
         return Service.START_STICKY  //please restart service after killing it
     }
@@ -610,29 +627,27 @@ class DiggerAudioService : Service(),
             MediaPlayer.MEDIA_ERROR_TIMED_OUT -> "Timed out"
             -2147483648 -> "System failure"
             else -> "No further details" }
-        Log.e("DiggerAudioService", "onError: $stat, $err")
+        Log.e(lognm, "onError: $stat, $err")
         return false  //triggers call to OnCompletionListener
     }
 
     //MediaPlayer.OnCompletionListener interface
+    //containing service keeps to keep binding and state vars
     override fun onCompletion(ignore: MediaPlayer) {
         val now = System.currentTimeMillis()
-        if((now - cts) < 5000) {  //UI has been in contact recently
-            return }              //assume it will handle playing the next song
         if(!dst.isEmpty()) {  //have state info, start autoplay
-            Log.d("DiggerAudioService", "onCompletion autoplay " + isostamp())
+            Log.d(lognm, "onCompletion autoplay " + isostamp())
             val path = getNextSongPathFromState()
             if(!path.isEmpty()) {  //have next song to play
                 noteSongPlayed(path)
                 dasPlaySong(Uri.fromFile(File(path))) }
             else {
-                Log.i("DiggerAudioService", "No path for next song, quitting.")
-                stopSelf() } }
+                Log.i(lognm, "No path for next song, ending.")
+                pbstate = "ended" } }
         else {
-            Log.i("DiggerAudioService", "No deck state, quitting.")
-            stopSelf() }
+            Log.i(lognm, "No deck state, ending.")
+            pbstate = "ended" }
     }
-
 }
 
 
@@ -648,11 +663,12 @@ class HubWebRequest(private val context: MainActivity,
                     private val verb: String,
                     private val data: String) : Runnable {
     override fun run() {
+        val lognm = "DiggerHub"
         val dhup = "https://diggerhub.com/api"
         var code = 503  //Service Unavailable
         var res = "Connection failed"
         try {
-            Log.d("DiggerHub", "$qname $reqnum $verb /api$endpoint $data")
+            Log.d(lognm, "$qname $reqnum $verb /api$endpoint $data")
             val url = URL(dhup + endpoint)
             (url.openConnection() as? HttpURLConnection)?.run {
                 setRequestProperty("Content-Type",
@@ -671,15 +687,15 @@ class HubWebRequest(private val context: MainActivity,
                     try {
                         res = errorStream.bufferedReader().readText()
                     } catch(rx: Exception) {
-                        Log.e("DiggerHubWebRequest", "errstream read error", rx)
+                        Log.e(lognm, "Connection errstream read error", rx)
                         res = responseMessage } } }
         } catch(e: Exception) {
-            Log.e("DiggerHubWebRequest", "Call error", e)
+            Log.e(lognm, "Connection call error", e)
         }
         res = res.replace("\\", "\\\\")  //escape contained backslashes
         res = res.replace("\"", "\\\"")  //escape contained quotes
         val cb = "app.svc.hubReqRes(\"$qname\",$reqnum,$code,\"$res\")"
-        Log.d("DiggerHub", cb)
+        Log.d(lognm, cb)
         context.runOnUiThread(Runnable() { context.djs(cb) })
     }
 }

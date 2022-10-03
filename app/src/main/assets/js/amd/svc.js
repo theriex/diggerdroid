@@ -18,6 +18,7 @@ app.svc = (function () {
     mgrs.mp = (function () {
         var rqn = 0;
         var cq = [];
+        const stateQueueMax = 200;  //generally 6+ hrs of music
         const mperrstat = "MediaPlayer error";
         function processNextCommand () {
             if(!cq || !cq.length) { return; }  //queue previously cleared
@@ -34,10 +35,12 @@ app.svc = (function () {
             if(cq.length === 1) {  //no other ongoing processing
                 processNextCommand(); } }
     return {
+        getStateQueueMax: function () { return stateQueueMax; },
         requestStatusUpdate: function (/*contf*/) {
-            var qm = 200;  //200 songs is generally 6+ hrs worth
+            var qm = stateQueueMax;
             qm = app.player.dispatch("slp", "limitToSleepQueueMax", qm);
             const dst = app.deck.getState(qm);  //songs currently on deck
+            jt.log("requestStatusUpdate dst.det.length: " + dst.det.length);
             queueCommand("status", JSON.stringify(dst)); },
         pause: function () { queueCommand("pause"); },
         resume: function () { queueCommand("resume"); },
@@ -56,7 +59,7 @@ app.svc = (function () {
                                 mperrstat, err); },
         notePlaybackStatus: function (stat) {
             jt.log("svc.mp.notePlaybackStatus stat: " + JSON.stringify(stat));
-            if(!cq.length) {
+            if(!cq.length) {  //no command in queue to connect this result to
                 return jt.log("svc.mp.notePlaybackStatus cq empty"); }
             if(!stat.state) {  //indeterminate result, retry
                 setTimeout(processNextCommand, 200);
@@ -343,7 +346,8 @@ app.svc = (function () {
         noteUpdatedState: function (label) {
             if(label === "deck") {
                 Android.noteState("deck",
-                                  JSON.stringify(app.deck.getState())); } },
+                                  JSON.stringify(app.deck.getState(
+                                      mgrs.mp.getStateQueueMax()))); } },
         restoreState: function () {
             var state = Android.getRestoreState("player");
             if(state) {
