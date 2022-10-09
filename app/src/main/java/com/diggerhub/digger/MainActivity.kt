@@ -485,11 +485,14 @@ class DiggerAudioService : Service(),
         return sdf.format(Date())
     }
 
+    //Called from the UI, or MediaPlayer.OnCompletion.  The deck state is
+    //updated when the UI requests status, so between when the UI starts a
+    //song and when it sends updated deck info, dst may be out of sync.  In
+    //most cases the service moves to the next song, so dst is
     fun dasPlaySong(pathuri: Uri) {
         val context = getApplicationContext()
         mp?.release()  //clean up any previously existing instance
         mp = MediaPlayer().apply {
-            dst = ""  //clear any previously saved deck state
             cts = System.currentTimeMillis()  //update UI communication time
             failmsg = ""  //clear any previous failure
             try {
@@ -502,7 +505,6 @@ class DiggerAudioService : Service(),
                 prepareAsync()  //release calling thread
                 pbstate = "playing"
             } catch(e: Exception) {
-                //leave dst cleared, app will resend
                 playpath = ""
                 Log.e(lognm, "onStartCommand dasPlaySong failed.", e)
                 failmsg = "DiggerAudioService.onStartCommand path " + pathuri
@@ -511,28 +513,28 @@ class DiggerAudioService : Service(),
             } }
     }
 
-    fun getNextSongPathFromState() : String {
-        val dso = JSONObject(dst)
-        val disp = dso.getString("disp")
-        Log.d(lognm, "getNextSongPathFromState disp: " + disp)
-        if(disp == "album") {
-            val det = dso.getJSONObject("det")
-            val info = det.getJSONObject("info")
-            var ci = info.getInt("ci")
-            ci += 1
-            val songs = info.getJSONArray("songs")
-            if(ci < songs.length()) {
-                val song = songs.getJSONObject(ci)
-                val path = song.getString("path")
-                info.put("ci", ci)
-                det.put("info", info)
-                dso.put("det", det)
-                dst = dso.toString()
-                Log.d(lognm, "  album path: " + path)
-                return path }
-            Log.d(lognm, "  No songs left on album")
-            return "" }
+    fun getNextAlbumSongPath(dso: JSONObject) : String {
+        val det = dso.getJSONObject("det")
+        val info = det.getJSONObject("info")
+        var ci = info.getInt("ci")
+        ci += 1
+        val songs = info.getJSONArray("songs")
+        if(ci < songs.length()) {
+            val song = songs.getJSONObject(ci)
+            val path = song.getString("path")
+            info.put("ci", ci)
+            det.put("info", info)
+            dso.put("det", det)
+            dst = dso.toString()
+            Log.d(lognm, "  album path: " + path)
+            return path }
+        Log.d(lognm, "  No songs left on album")
+        return ""
+    }
+
+    fun getNextDeckSongPath(dso: JSONObject) : String {
         val det = dso.getJSONArray("det")
+        Log.d(lognm, "  det.length: " + det.length())
         if(det.length() == 0) {
             Log.d(lognm, "  No songs left on deck")
             return "" }
@@ -542,6 +544,15 @@ class DiggerAudioService : Service(),
         dst = dso.toString()
         Log.d(lognm, "  deck path: " + path)
         return path
+    }
+
+    fun getNextSongPathFromState() : String {
+        val dso = JSONObject(dst)
+        val disp = dso.getString("disp")
+        Log.d(lognm, "getNextSongPathFromState disp: " + disp)
+        if(disp == "album") {
+            return getNextAlbumSongPath(dso) }
+        return getNextDeckSongPath(dso)
     }
 
     //should not collide with paused/stopped activity thread since autoplaying
