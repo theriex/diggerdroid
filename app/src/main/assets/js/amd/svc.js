@@ -387,8 +387,7 @@ app.svc = (function () {
         noteUpdatedSongData: function (updsong) {
             //on Android the local database has already been updated, and
             //local memory is up to date.
-            app.player.dispatch("mob", "rebuildIfSongPlaying", updsong);
-            app.deck.dispatch("ws", "rebuild", "noteUpdatedSongData"); },
+            return; },
         makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
             mgrs.hc.queueRequest(endpoint, "/" + endpoint, verb, data,
                                  contf, errf); }
