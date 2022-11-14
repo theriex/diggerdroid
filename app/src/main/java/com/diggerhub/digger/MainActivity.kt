@@ -2,6 +2,7 @@ package com.diggerhub.digger
 
 import android.Manifest.permission.READ_EXTERNAL_STORAGE
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.Service
 import android.app.PendingIntent
 import android.content.ClipData
@@ -364,7 +365,8 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                     when(command) {
                         "status" -> {
                             Log.d(lognm, "das.dst updated")
-                            das.dst = param }
+                            das.dst = param
+                            das.verifyNotice() }
                         "pause" -> {
                             sipbst = "paused"
                             mp.pause() }
@@ -428,7 +430,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                 decoupleService()
                 //Log.d(lognm, "binding service did not connect")
                 sipbst = ""; } }
-        commok = false  //reset for next call
+        commok = false  //reset indicator flag for next call
         val encpath = java.net.URLEncoder.encode(path, "utf-8")
         val statobj = ("{state:\"$sipbst\", pos:$pos, dur:$dur" +
                        ", path:\"$encpath\", cc:$reqnum}")
@@ -471,8 +473,9 @@ class DiggerAudioService : Service(),
                     MediaPlayer.OnErrorListener,
                     MediaPlayer.OnCompletionListener {
     val lognm = "DiggerAudioService"
+    val svcNoticeId = 1   //1 is used in most if not all sample code
+    val defaultNoticeText = "Playing your matching songs."
     var mp: MediaPlayer? = null
-    var svcntf: Notification? = null
     //Playback state variables accessed locally and by DiggerASI
     var pbstate = "init"  //"playing"/"paused"/"ended"/"failed"
     var dst = ""   //most recently received Digger deck state
@@ -485,10 +488,11 @@ class DiggerAudioService : Service(),
         return sdf.format(Date())
     }
 
-    //Called from the UI, or MediaPlayer.OnCompletion.  The deck state is
-    //updated when the UI requests status, so between when the UI starts a
-    //song and when it sends updated deck info, dst may be out of sync.  In
-    //most cases the service moves to the next song, so dst is
+    //Called from the UI, or MediaPlayer.OnCompletion.  When initially
+    //launching a service, only the song URI is available.  The deck state
+    //info (dst) is transferred a few seconds afterwards via binding when
+    //the app tickf requests playback state.  Until dst is available, the
+    //service has no app information about the song other than the URI.
     fun dasPlaySong(pathuri: Uri) {
         val context = getApplicationContext()
         mp?.release()  //clean up any previously existing instance
@@ -541,6 +545,7 @@ class DiggerAudioService : Service(),
         val song = det.remove(0) as JSONObject
         val path = song.getString("path")
         dso.put("det", det)
+        dso.put("npsi", song)
         dst = dso.toString()
         Log.d(lognm, "  deck path: " + path)
         return path
@@ -571,17 +576,9 @@ class DiggerAudioService : Service(),
         ddf.writeText(dat.toString(2))  //human readable 2 indent spaces
     }
 
-    val binder = DiggerBinder()
-    inner class DiggerBinder: Binder() {
-        fun getService(): DiggerAudioService {
-            return this@DiggerAudioService }
-    }
-    override fun onBind(intent: Intent): IBinder {
-        return binder
-    }
-
-    override fun onCreate() {
-        super.onCreate();
+    //create the required ForegroundService Notification and return it.
+    fun makeFgSvcN(text: String) : Notification {
+        var svcntf: Notification
         val context = getApplicationContext()
         val pndi = PendingIntent.getActivity(
             context,
@@ -593,10 +590,39 @@ class DiggerAudioService : Service(),
         //DiggerSvcChan is a unique channel name created in DiggerApp.
         NotificationCompat.Builder(context, "DiggerSvcChan").apply {
             setContentTitle("Digger Music Service")
-            setContentText("Playing your matching songs.")
+            setContentText(text)
             setSmallIcon(R.mipmap.ic_launcher)
             setContentIntent(pndi)
             svcntf = build() }
+        return svcntf
+    }
+
+    //Seems wasteful to update the notice text every few seconds, but if
+    //system may ignore a notice text change due to sleep or whatever.
+    fun verifyNotice() {
+        var ntxt = defaultNoticeText
+        if(playpath == "") {
+            ntxt = "Playback stopped" }
+        else if(dst != "") {
+            var dso = JSONObject(dst)
+            if(dso.has("npsi")) {
+                var song = dso.getJSONObject("npsi")
+                ntxt = song.getString("ti") + " - " + song.getString("ar") } }
+        val nmgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nmgr.notify(svcNoticeId, makeFgSvcN(ntxt))
+    }
+
+    val binder = DiggerBinder()
+    inner class DiggerBinder: Binder() {
+        fun getService(): DiggerAudioService {
+            return this@DiggerAudioService }
+    }
+    override fun onBind(intent: Intent): IBinder {
+        return binder
+    }
+
+    override fun onCreate() {
+        super.onCreate();
         pbstate = "init"
         dst = ""
         failmsg = ""
@@ -611,7 +637,7 @@ class DiggerAudioService : Service(),
             dasPlaySong(pathuri) }
         else {  //null, service restarted after having been killed
             Log.d(lognm, "onStartCommand null intent (restart)") }
-        startForeground(1, svcntf)
+        startForeground(svcNoticeId, makeFgSvcN(defaultNoticeText))
         return Service.START_STICKY  //please restart service after killing it
     }
 
@@ -658,6 +684,7 @@ class DiggerAudioService : Service(),
         else {
             Log.i(lognm, "No deck state, ending.")
             pbstate = "ended" }
+        verifyNotice()
     }
 }
 
