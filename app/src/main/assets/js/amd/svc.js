@@ -384,7 +384,7 @@ app.svc = (function () {
                                  function (res) {
                                      res = mgrs.hw.procSyncData(res);
                                      contf(res); }, errf); },
-        noteUpdatedSongData: function (updsong) {
+        noteUpdatedSongData: function (/*updsong*/) {
             //on Android the local database has already been updated, and
             //local memory is up to date.
             return; },
@@ -401,7 +401,8 @@ app.svc = (function () {
             hdm: "loc",   //host data manager is local
             musicPath: "fixed",  //can't change where music files are
             dbPath: "fixed",  //rating info is only kept in app files for now
-            audsrc: "Android"};
+            audsrc: "Android",
+            versioncode: Android.getVersionCode() };
         var songfields = ["dsType", "batchconv", "aid", "ti", "ar", "ab",
                           "el", "al", "kws", "rv", "fq", "lp", "nt",
                           "dsId", "modified"];

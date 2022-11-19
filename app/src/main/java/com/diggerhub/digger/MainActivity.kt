@@ -247,6 +247,11 @@ class DiggerAppInterface(private val context: MainActivity) {
         return "v" + BuildConfig.VERSION_NAME
     }
     @JavascriptInterface
+    fun getVersionCode() : String {
+        var bc = BuildConfig.VERSION_CODE
+        return "build " + bc.toString()
+    }
+    @JavascriptInterface
     fun readConfig() : String {
         return readFile(File(context.filesDir, "config.json"))
     }
