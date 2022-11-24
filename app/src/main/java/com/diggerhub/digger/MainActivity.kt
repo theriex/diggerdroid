@@ -23,14 +23,16 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.MediaStore
 import android.support.v4.media.MediaBrowserCompat.MediaItem
+import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
+import android.view.KeyEvent
 import android.webkit.*
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
-import androidx.media.MediaBrowserServiceCompat
+import androidx.media.session.MediaButtonReceiver
 import androidx.webkit.WebViewAssetLoader
 import com.diggerhub.digger.BuildConfig
 import java.io.File
@@ -481,12 +483,38 @@ class DiggerAudioService : Service(),
     val svcNoticeId = 1   //1 is used in most if not all sample code
     val defaultNoticeText = "Playing your matching songs."
     var mp: MediaPlayer? = null
+    lateinit var mse: MediaSessionCompat  //session has same lifespan as service
+    //create a callback object extending the required abstract base class
+    val mscb: MediaSessionCompat.Callback = object: MediaSessionCompat.Callback() {
+        override fun onMediaButtonEvent(mbi: Intent): Boolean {
+            val action = mbi.getAction()
+            val keyevt: KeyEvent? = mbi.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+            Log.d(lognm, "das mscb action: " + action + ", keyevt: " + keyevt)
+            if(action == Intent.ACTION_MEDIA_BUTTON) {
+                if(keyevt?.action == KeyEvent.ACTION_UP) {
+                    togglePlayPause() } }
+            return super.onMediaButtonEvent(mbi)
+        }
+    }
     //Playback state variables accessed locally and by DiggerASI
     var pbstate = "init"  //"playing"/"paused"/"ended"/"failed"
     var dst = ""   //most recently received Digger deck state
     var cts = System.currentTimeMillis()  //most recent UI communication time
     var failmsg = ""
     var playpath = ""
+
+    fun togglePlayPause() {
+        var state = "unknown"
+        if(mp != null) {
+            val mpref = mp!!
+            if(mpref.isPlaying()) {
+                mpref.pause()
+                state = "paused" }
+            else {
+                mpref.start()
+                state = "playing" } }
+        Log.d(lognm, "togglePlayPause state: " + state)
+    }
 
     fun isostamp() : String {
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
@@ -632,6 +660,16 @@ class DiggerAudioService : Service(),
         dst = ""
         failmsg = ""
         playpath = ""
+        //init media session to react to android media controls
+        val context = getApplicationContext()
+        val tag = "DiggerAudioServiceSession"  //arbitrary but identifiable tag
+        val mscn = ComponentName(context,
+                                 "com.diggerhub.digger.DiggerAudioService")
+        mse = MediaSessionCompat(context, tag, mscn, null)
+        mse.setCallback(mscb)
+        mse.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                     MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
+        mse.isActive = true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -648,6 +686,7 @@ class DiggerAudioService : Service(),
 
     override fun onDestroy() {
         super.onDestroy()
+        mse.release()
         mp?.release()
         mp = null
     }
@@ -691,6 +730,7 @@ class DiggerAudioService : Service(),
             pbstate = "ended" }
         verifyNotice()
     }
+
 }
 
 
