@@ -595,6 +595,7 @@ class DiggerAudioService : Service(),
 
     //should not collide with paused/stopped activity thread since autoplaying
     fun noteSongPlayed(path: String) {
+        Log.d(lognm, "noteSongPlayed " + path)
         val ddf = File(getApplicationContext().filesDir, "digdat.json")
         val inputStream: InputStream = ddf.inputStream()
         val text = inputStream.bufferedReader().use { it.readText() }
@@ -604,6 +605,7 @@ class DiggerAudioService : Service(),
         val pc = song.optInt("pc", 0)
         song.put("pc", pc + 1)
         song.put("lp", isostamp())
+        Log.d(lognm, "    lp: " + song["lp"])
         songs.put(path, song)
         dat.put("songs", songs)
         ddf.writeText(dat.toString(2))  //human readable 2 indent spaces
