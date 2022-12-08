@@ -299,6 +299,7 @@ app.svc = (function () {
             Android.writeConfig(JSON.stringify(config, null, 2)); }
     return {
         getConfig: function () { return config; },
+        getDigDat: function () { return dbo; },
         writeConfig: function (cfg, contf/*, errf*/) {
             setAndWriteConfig(cfg);
             setTimeout(function () { contf(config); }, 50); },
@@ -309,16 +310,13 @@ app.svc = (function () {
             setAndWriteConfig(config);
             setTimeout(function () { contf(config.acctsinfo); }, 50); },
         getDatabase: function () { return dbo; },
-        songs: function (cmd) {
-            if(cmd === "reload") {
-                jt.log("svc.loc.songs reloading dbo...");
-                try {
-                    dbo = JSON.parse(Android.readDigDat() || "{}"); }
-                catch(e) {
-                    return jt.err("songs reload failed: " + e); }
-                jt.log("svc.loc.songs dbo reloaded.");
+        loadDigDat: function (cbf) {
+            try {
+                dbo = JSON.parse(Android.readDigDat() || "{}");
                 dbo = mgrs.sg.verifyDatabase(dbo); }
-            return dbo.songs; },
+            catch(e) {
+                return jt.err("loadDigDat failed: " + e); }
+            cbf(dbo); },
         fetchSongs: function (contf/*, errf*/) {  //call stack as if web call
             setTimeout(function () { contf(dbo.songs); }, 50); },
         fetchAlbum: function (song, contf/*, errf*/) {
@@ -458,7 +456,8 @@ app.svc = (function () {
 return {
     init: function () { mgrs.gen.initialize(); },
     plat: function (key) { return mgrs.gen.plat(key); },
-    songs: function (cmd) { return mgrs.loc.songs(cmd); },
+    loadDigDat: function (cbf) { mgrs.loc.loadDigDat(cbf); },
+    songs: function () { return mgrs.loc.getDigDat().songs; },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
     updateSong: function (song, cf, ef) { mgrs.loc.updateSong(song, cf, ef); },
