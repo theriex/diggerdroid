@@ -69,6 +69,10 @@ app.svc = (function () {
                 app.player.dispatch("mob", "handlePlayFailure",
                                     mperrstat, stat.state);
                 return; }
+            if(stat.path) {
+                stat.path = jt.dec(stat.path);  //undo URI encode
+                stat.path = jt.dec(stat.path);  //undo File encode
+                stat.path = stat.path.slice(7); //remove "file://" prefix
             app.player.dispatch("mob", "notePlaybackStatus", stat);
             stat.song = app.player.song();
             Android.noteState("player", JSON.stringify(stat));
@@ -335,7 +339,7 @@ app.svc = (function () {
                 return jt.err("Not writing bad data " + JSON.stringify(stat)); }
             Android.writeDigDat(JSON.stringify(dbo, null, 2)); },
         updateSong: function (song, contf, ignore /*errf*/) {
-            mgrs.gen.copyUpdatedSongData(song, dbo.songs[song.path]);
+            app.copyUpdatedSongData(song, dbo.songs[song.path]);
             mgrs.loc.writeSongs();
             jt.out("modindspan", "");  //turn off indicator light
             app.top.dispatch("srs", "syncToHub");  //sched sync
@@ -401,9 +405,6 @@ app.svc = (function () {
             dbPath: "fixed",  //rating info is only kept in app files for now
             audsrc: "Android",
             versioncode: Android.getVersionCode() };
-        var songfields = ["dsType", "batchconv", "aid", "ti", "ar", "ab",
-                          "el", "al", "kws", "rv", "fq", "lp", "nt",
-                          "dsId", "modified"];
     return {
         plat: function (key) { return platconf[key]; },
         authdata: function (obj) { //return obj post data, with an/at added
@@ -414,10 +415,6 @@ app.svc = (function () {
             return authdat; },
         noteUpdatedSongData: function (song) {
             mgrs.loc.noteUpdatedSongData(song); },
-        copyUpdatedSongData: function (song, updsong) {
-            songfields.forEach(function (fld) {
-                if(updsong.hasOwnProperty(fld)) {  //don't copy undefined values
-                    song[fld] = updsong[fld]; } }); },
         updateMultipleSongs: function (/*updss, contf, errf*/) {
             jt.err("svc.gen.updateMultipleSongs is web only"); },
         initialize: function () {  //don't block init of rest of modules
