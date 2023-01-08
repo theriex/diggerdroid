@@ -8,12 +8,6 @@ app.svc = (function () {
     var mgrs = {};  //general container for managers
 
 
-    function txSongsJSON (songs) {
-        songs = songs.map((song) => app.txSong(song));
-        return JSON.stringify(songs);
-    }
-
-
     //Media Playback manager handles transport and playback calls
     mgrs.mp = (function () {
         var rqn = 0;
@@ -70,9 +64,9 @@ app.svc = (function () {
                                     mperrstat, stat.state);
                 return; }
             if(stat.path) {
-                stat.path = jt.dec(stat.path);  //undo URI encode
-                stat.path = jt.dec(stat.path);  //undo File encode
-                stat.path = stat.path.slice(7); //remove "file://" prefix
+                stat.path = jt.dec(stat.path);    //undo URI encode
+                stat.path = jt.dec(stat.path);    //undo File encode
+                stat.path = stat.path.slice(7); } //remove "file://" prefix
             app.player.dispatch("mob", "notePlaybackStatus", stat);
             stat.song = app.player.song();
             Android.noteState("player", JSON.stringify(stat));
@@ -92,32 +86,6 @@ app.svc = (function () {
         exportSongs: function (/*dat, statusfunc, contfunc, errfunc*/) {
             jt.log("svc.cpx.exportSongs not supported."); }
     };  //end mgrs.cpx returned functions
-    }());
-
-
-    //user and config processing
-    mgrs.usr = (function () {
-    return {
-        writeUpdatedAccount: function (updacc) {
-            var conf = mgrs.loc.getConfig();
-            var accts = conf.acctsinfo.accts;
-            var aidx = accts.findIndex((a) => a.dsId === updacc.dsId);
-            updacc.token = accts[aidx].token;
-            accts[aidx] = updacc;
-            mgrs.loc.writeConfig(conf,
-                function () {
-                    jt.log("svc.usr.writeUpdatedAccount success"); }); },
-        noteUpdatedAccount: function (updacc) {
-            app.top.dispatch("hcu", "deserializeAccount", updacc);
-            jt.log("svc.usr.noteUpdatedAccoount musfs: " +
-                   JSON.stringify(updacc.musfs));
-            mgrs.usr.writeUpdatedAccount(updacc); },
-        noteFanUpdateReturn: function (res) {
-            mgrs.usr.noteUpdatedAccount(res[0]);
-            const ca = app.top.dispatch("aaa", "getAccount");
-            app.top.dispatch("aaa", "reflectAccountChangeInRuntime",
-                             res[0], ca.token); }
-    };  //end mgrs.usr returned functions
     }());
 
 
@@ -246,54 +214,6 @@ app.svc = (function () {
     }());
 
 
-    //hub work manager handles local data work between hub and web app
-    mgrs.hw = (function () {
-    return {
-        getSongUploadData: function () {  //see hub.js mfcontrib
-            var mstc = 32;  //maximum song transfer count
-            var dat = {uplds:[]}; var dbo = mgrs.loc.getDatabase();
-            Object.entries(dbo.songs).forEach(function ([p, s]) {
-                if(dat.uplds.length < mstc && !s.dsId &&
-                   s.ti && s.ar && (!s.fq || !(s.fq.startsWith("D") ||
-                                               s.fq.startsWith("U")))) {
-                    s.path = p;
-                    dat.uplds.push(s); } });
-            dat.uplds = txSongsJSON(dat.uplds);
-            return dat; },
-        updateLocalSong: function (dbo, s) {
-            var ls = dbo.songs[s.path];
-            if(!ls) {  //path was from some another Digger setup, try find it
-                ls = Object.values(dbo.songs).find((x) =>
-                    x.dsId === s.dsId ||  //match id or tiarab
-                        (x.ti === s.ti && x.ar === s.ar && x.ab === s.ab)); }
-            if(!ls) {  //non-local path, no matching local song, add for ref
-                ls = {path:s.path,  //Need a path, even if no file there.
-                      fq:"DN",      //Deleted file, Newly added
-                      ti:s.ti, ar:s.ar, ab:s.ab,
-                      lp:s.lp};     //Played on other setup, keep value
-                dbo.songs[s.path] = ls; }
-            jt.log("writing updated song " + ls.path);
-            const flds = ["modified", "dsId", "rv", "al", "el", "kws", "nt"];
-            if(!(ls.fq.startsWith("D") || ls.fq.startsWith("U"))) {
-                flds.push("fq"); }  //update fq unless deleted or unreadable
-            flds.forEach(function (fld) { ls[fld] = s[fld]; }); },
-        updateSongs: function (updsongs) {
-            if(updsongs.length) {
-                const dbo = mgrs.loc.getDatabase();
-                updsongs.forEach(function (s) {
-                    mgrs.hw.updateLocalSong(dbo, s); });
-                mgrs.loc.writeSongs(); } },
-        procSyncData: function (res) {  //hub.js processReceivedSyncData
-            app.player.logCurrentlyPlaying("svc.hw.procSyncData");
-            const updacc = res[0];
-            updacc.diggerVersion = Android.getAppVersion();
-            mgrs.usr.noteUpdatedAccount(updacc);
-            mgrs.hw.updateSongs(res.slice(1));
-            return res; }
-    };  //end mgrs.hw returned functions
-    }());
-
-
     //Local manager handles local environment interaction
     mgrs.loc = (function () {
         var config = null;
@@ -304,6 +224,7 @@ app.svc = (function () {
     return {
         getConfig: function () { return config; },
         getDigDat: function () { return dbo; },
+        songs: function () { return mgrs.loc.getDigDat().songs; },
         writeConfig: function (cfg, contf/*, errf*/) {
             setAndWriteConfig(cfg);
             setTimeout(function () { contf(config); }, 50); },
@@ -381,10 +302,17 @@ app.svc = (function () {
                 setTimeout(mgrs.sg.loadLibrary, 50); } },
         loadLibrary: function (procdivid) {
             mgrs.sg.loadLibrary(procdivid); },
+        procSyncData: function (res) {  //hub.js processReceivedSyncData
+            app.player.logCurrentlyPlaying("svc.loc.procSyncData");
+            const updacc = res[0];
+            updacc.diggerVersion = Android.getAppVersion();
+            app.deck.dispatch("hsu", "noteSynchronizedAccount", updacc);
+            app.deck.dispatch("hsu", "updateSynchronizedSongs", res.slice(1));
+            return res; },
         hubSyncDat: function (data, contf, errf) {
             mgrs.hc.queueRequest("hubSyncDat", "/hubsync", "POST", data,
                                  function (res) {
-                                     res = mgrs.hw.procSyncData(res);
+                                     res = mgrs.loc.procSyncData(res);
                                      contf(res); }, errf); },
         noteUpdatedSongData: function (/*updsong*/) {
             //on Android the local database has already been updated, and
@@ -407,12 +335,6 @@ app.svc = (function () {
             versioncode: Android.getVersionCode() };
     return {
         plat: function (key) { return platconf[key]; },
-        authdata: function (obj) { //return obj post data, with an/at added
-            var digacc = app.top.dispatch("aaa", "getAccount");
-            var authdat = jt.objdata({an:digacc.email, at:digacc.token});
-            if(obj) {
-                authdat += "&" + jt.objdata(obj); }
-            return authdat; },
         noteUpdatedSongData: function (song) {
             mgrs.loc.noteUpdatedSongData(song); },
         updateMultipleSongs: function (/*updss, contf, errf*/) {
@@ -437,7 +359,7 @@ app.svc = (function () {
         fanCollab: function (data, contf, errf) {
             mgrs.hc.queueRequest("fancollab", "/fancollab", "POST", data,
                                  function (res) {
-                                     res = mgrs.hw.procSyncData(res);
+                                     res = mgrs.loc.procSyncData(res);
                                      contf(res); }, errf); },
         fanMessage: function (data, contf, errf) {
             mgrs.hc.queueRequest("fanmsg", "/fanmsg", "POST", data,
@@ -454,11 +376,10 @@ return {
     init: function () { mgrs.gen.initialize(); },
     plat: function (key) { return mgrs.gen.plat(key); },
     loadDigDat: function (cbf) { mgrs.loc.loadDigDat(cbf); },
-    songs: function () { return mgrs.loc.getDigDat().songs; },
+    songs: function () { return mgrs.loc.songs; },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
     updateSong: function (song, cf, ef) { mgrs.loc.updateSong(song, cf, ef); },
-    authdata: function (obj) { return mgrs.gen.authdata(obj); },
     noteUpdatedState: function (label) { mgrs.loc.noteUpdatedState(label); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     playerFailure: function (err) { mgrs.mp.playerFailure(err); },
