@@ -492,7 +492,8 @@ class DiggerAudioService : Service(),
             Log.d(lognm, "das mscb action: " + action + ", keyevt: " + keyevt)
             if(action == Intent.ACTION_MEDIA_BUTTON) {
                 if(keyevt?.action == KeyEvent.ACTION_UP) {
-                    togglePlayPause() } }
+                    if(pbstate != "ended") {  //not sleeping
+                        togglePlayPause() } } }
             return super.onMediaButtonEvent(mbi)
         }
     }
