@@ -314,10 +314,10 @@ app.svc = (function () {
                                  function (res) {
                                      res = mgrs.loc.procSyncData(res);
                                      contf(res); }, errf); },
-        noteUpdatedSongData: function (/*updsong*/) {
+        noteUpdatedSongData: function (updsong) {
             //on Android the local database has already been updated, and
             //local memory is up to date.
-            return; },
+            return dbo.songs[updsong.path]; },
         makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
             mgrs.hc.queueRequest(endpoint, "/" + endpoint, verb, data,
                                  contf, errf); }
@@ -336,7 +336,7 @@ app.svc = (function () {
     return {
         plat: function (key) { return platconf[key]; },
         noteUpdatedSongData: function (song) {
-            mgrs.loc.noteUpdatedSongData(song); },
+            return mgrs.loc.noteUpdatedSongData(song); },
         updateMultipleSongs: function (/*updss, contf, errf*/) {
             jt.err("svc.gen.updateMultipleSongs is web only"); },
         initialize: function () {  //don't block init of rest of modules
