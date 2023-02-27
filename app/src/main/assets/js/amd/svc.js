@@ -260,7 +260,7 @@ app.svc = (function () {
                 return jt.err("Not writing bad data " + JSON.stringify(stat)); }
             Android.writeDigDat(JSON.stringify(dbo, null, 2)); },
         updateSong: function (song, contf, ignore /*errf*/) {
-            app.copyUpdatedSongData(song, dbo.songs[song.path]);
+            app.copyUpdatedSongData(dbo.songs[song.path], song);
             mgrs.loc.writeSongs();
             jt.out("modindspan", "");  //turn off indicator light
             app.top.dispatch("srs", "syncToHub");  //sched sync
@@ -376,7 +376,7 @@ return {
     init: function () { mgrs.gen.initialize(); },
     plat: function (key) { return mgrs.gen.plat(key); },
     loadDigDat: function (cbf) { mgrs.loc.loadDigDat(cbf); },
-    songs: function () { return mgrs.loc.songs; },
+    songs: function () { return mgrs.loc.songs(); },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
     updateSong: function (song, cf, ef) { mgrs.loc.updateSong(song, cf, ef); },
