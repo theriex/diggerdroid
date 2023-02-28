@@ -218,9 +218,24 @@ app.svc = (function () {
     mgrs.loc = (function () {
         var config = null;
         var dbo = null;
-        function setAndWriteConfig(cfg) {
+        function setAndWriteConfig (cfg) {
             config = cfg;
             Android.writeConfig(JSON.stringify(config, null, 2)); }
+        function badExt (path) {
+            if(path.indexOf(".") < 0) {
+                return false; }
+            const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+            const unsupported = ["m4a"];
+            if(unsupported.indexOf(ext) >= 0) {
+                return true; }
+            return false; }
+        function playableSongs () {
+            const songs = Object.fromEntries(Object.entries(dbo.songs).filter(
+                function (path, song) {
+                    if(!badExt(path)) {
+                        return [path, song]; }
+                    return false; }));
+            return songs; }
     return {
         getConfig: function () { return config; },
         getDigDat: function () { return dbo; },
@@ -243,11 +258,11 @@ app.svc = (function () {
                 return jt.err("loadDigDat failed: " + e); }
             cbf(dbo); },
         fetchSongs: function (contf/*, errf*/) {  //call stack as if web call
-            setTimeout(function () { contf(dbo.songs); }, 50); },
+            setTimeout(function () { contf(playableSongs()); }, 50); },
         fetchAlbum: function (song, contf/*, errf*/) {
             var lsi = song.path.lastIndexOf("/");  //last separator index
             const pp = song.path.slice(0, lsi + 1);  //path prefix
-            const abs = Object.values(dbo.songs)  //album songs
+            const abs = Object.values(playableSongs())  //album songs
             //simple ab match won't work (e.g. "Greatest Hits").  ab + ar fails
             //if the artist name varies (e.g. "main artist featuring whoever".
                 .filter((s) => s.path.startsWith(pp))
