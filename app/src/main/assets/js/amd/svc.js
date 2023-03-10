@@ -161,6 +161,7 @@ app.svc = (function () {
             Android.requestMediaRead(); },
         verifyDatabase: function (dbo) {
             var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
+            dbo.version = Android.getAppVersion();  //maybe diff since last run
             if(stat.verified) { return dbo; }
             jt.log("svc.db.verifyDatabase re-initializing dbo, received " +
                    JSON.stringify(stat));
