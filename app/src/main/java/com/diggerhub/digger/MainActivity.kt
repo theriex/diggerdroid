@@ -1,6 +1,6 @@
 package com.diggerhub.digger
 
-import android.Manifest.permission.READ_EXTERNAL_STORAGE
+import android.Manifest.permission.READ_MEDIA_AUDIO
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
@@ -53,19 +53,19 @@ class MainActivity : AppCompatActivity() {
     val stateInfo = Bundle()  //player and deck state info for view rebuild
     val execsvc: ExecutorService = Executors.newFixedThreadPool(2)
 
-    //Need to ask for READ_EXTERNAL_STORAGE interactively each time since it
+    //Need to ask for READ_MEDIA_AUDIO interactively each time since it
     //can be revoked by the user.  Kicked off from requestMediaRead
     val prl = registerForActivityResult(RequestPermission()) { isGranted ->
         var stat = ""
         if(isGranted) {
             fetchMusicData() }
         else {
-            stat = "READ_EXTERNAL_STORAGE permission denied." }
-        djs("app.svc.mediaReadComplete($stat)") }
+            stat = "READ_MEDIA_AUDIO permission denied." }
+        djs("app.svc.mediaReadComplete(\"$stat\")") }
 
     //digger javascript to run in the webview
     fun djs(jstxt: String) {
-        //Log.d(lognm, "djs: " + jstxt)
+        Log.d(lognm, "djs: " + jstxt)
         val dwv: WebView = findViewById(R.id.webview)
         try {
             dwv.evaluateJavascript(jstxt, null)
@@ -220,7 +220,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun requestMediaRead() {
-        prl.launch(READ_EXTERNAL_STORAGE)
+        prl.launch(READ_MEDIA_AUDIO)
     }
 }
 
@@ -442,6 +442,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
         val statobj = ("{state:\"$sipbst\", pos:$pos, dur:$dur" +
                        ", path:\"$encpath\", cc:$reqnum}")
         val callback = "app.svc.notePlaybackStatus($statobj)"
+        Log.d(lognm, "callback: " + callback)
         context.runOnUiThread(Runnable() { context.djs(callback) })
     }
 
@@ -485,7 +486,7 @@ class DiggerAudioService : Service(),
     var mp: MediaPlayer? = null
     lateinit var mse: MediaSessionCompat  //session has same lifespan as service
     //create a callback object extending the required abstract base class
-    val mscb: MediaSessionCompat.Callback = object: MediaSessionCompat.Callback() {
+    val mscb: MediaSessionCompat.Callback = object: MediaSessionCompat.Callback() {  //support pause button on bluetooth headsets
         override fun onMediaButtonEvent(mbi: Intent): Boolean {
             val action = mbi.getAction()
             val keyevt: KeyEvent? = mbi.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
@@ -545,7 +546,8 @@ class DiggerAudioService : Service(),
             } catch(e: Exception) {
                 playpath = ""
                 Log.e(lognm, "onStartCommand dasPlaySong failed.", e)
-                failmsg = "DiggerAudioService.onStartCommand path " + pathuri
+                failmsg = ("DiggerAudioService.onStartCommand path: " +
+                           pathuri + ", msg: " + e.message)
                 Log.d(lognm, "failmsg: " + failmsg)
                 pbstate = "failed"
             } }
@@ -659,6 +661,7 @@ class DiggerAudioService : Service(),
 
     override fun onCreate() {
         super.onCreate();
+
         pbstate = "init"
         dst = ""
         failmsg = ""
