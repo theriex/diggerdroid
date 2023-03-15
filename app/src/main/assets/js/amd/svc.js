@@ -250,7 +250,7 @@ app.svc = (function () {
             const pp = song.path.slice(0, lsi + 1);  //path prefix
             const abs = Object.values(dbo.songs)  //album songs
             //simple ab match won't work (e.g. "Greatest Hits").  ab + ar fails
-            //if the artist name varies (e.g. "main artist featuring whoever".
+            //if the artist name varies (e.g. "main artist featuring whoever").
                 .filter((s) => s.path.startsWith(pp))
                 .sort(function (a, b) {  //assuming filename start with track#
                     return a.path.localeCompare(b.path); });
