@@ -267,6 +267,15 @@ app.svc = (function () {
             app.top.dispatch("srs", "syncToHub");  //sched sync
             if(contf) {
                 contf(dbo.songs[song.path]); } },
+        updateMultipleSongs: function (songs, contf/*, errf*/) {
+            var rsgs = [];
+            songs.forEach(function (song) {
+                app.copyUpdatedSongData(dbo.songs[song.path], song);
+                rsgs.push(dbo.songs[song.path]); });
+            mgrs.loc.writeSongs();
+            app.top.dispatch("srs", "syncToHub");  //sched sync
+            if(contf) {
+                contf(rsgs); } },
         noteUpdatedState: function (label) {
             if(label === "deck") {
                 Android.noteState("deck",
@@ -338,8 +347,8 @@ app.svc = (function () {
         plat: function (key) { return platconf[key]; },
         noteUpdatedSongData: function (song) {
             return mgrs.loc.noteUpdatedSongData(song); },
-        updateMultipleSongs: function (/*updss, contf, errf*/) {
-            jt.err("svc.gen.updateMultipleSongs is web only"); },
+        updateMultipleSongs: function (songs, contf, errf) {
+            return mgrs.loc.updateMultipleSongs(songs, contf, errf); },
         initialize: function () {  //don't block init of rest of modules
             setTimeout(mgrs.loc.loadInitialData, 50); },
         okToPlay: function (song) {
@@ -374,7 +383,11 @@ app.svc = (function () {
         copyToClipboard: function (txt, contf, errf) {
             if(Android.copyToClipboard(txt)) {
                 return contf(); }
-            errf(); }
+            errf(); },
+        tlasupp: function (act) {
+            if(act.id === "ignorefldrsbutton") {
+                return false; }
+            return true; }
     };  //end mgrs.gen returned functions
     }());
 
@@ -395,6 +408,7 @@ return {
     hubReqRes: function (q, r, c, d) { mgrs.hc.hubResponse(q, r, c, d); },
     urlOpenSupp: function () { return false; }, //links break webview
     docContent: function (du, cf) { mgrs.gen.docContent(du, cf); },
+    topLibActionSupported: function (a) { return mgrs.gen.tlasupp(a); },
     writeConfig: function (cfg, cf, ef) { mgrs.gen.writeConfig(cfg, cf, ef); },
     dispatch: function (mgrname, fname, ...args) {
         try {
