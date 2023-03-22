@@ -28,6 +28,8 @@ app.svc = (function () {
             cq.push({cmd:command, param:parameter || "", cc:rqn});
             if(cq.length === 1) {  //no other ongoing processing
                 processNextCommand(); } }
+        function notePlaybackState (stat) {
+            app.player.dispatch("mob", "notePlaybackStatus", stat); }
     return {
         getStateQueueMax: function () { return stateQueueMax; },
         requestStatusUpdate: function (/*contf*/) {
@@ -35,15 +37,23 @@ app.svc = (function () {
             qm = app.player.dispatch("slp", "limitToSleepQueueMax", qm);
             const dst = app.deck.getState(qm);  //songs currently on deck
             jt.log("requestStatusUpdate dst.det.length: " + dst.det.length);
-            queueCommand("status", JSON.stringify(dst)); },
-        pause: function () { queueCommand("pause"); },
-        resume: function () { queueCommand("resume"); },
-        seek: function (ms) { queueCommand("seek", String(ms)); },
+            if(!app.scr.stubbed("statusSync", null, notePlaybackState)) {
+                queueCommand("status", JSON.stringify(dst)); } },
+        pause: function () {
+            if(!app.scr.stubbed("pausePlayback", null, notePlaybackState)) {
+                queueCommand("pause"); } },
+        resume: function () {
+            if(!app.scr.stubbed("resumePlayback", null, notePlaybackState)) {
+                queueCommand("resume"); } },
+        seek: function (ms) {
+            if(!app.scr.stubbed("seekToOffset", null, notePlaybackState)) {
+                queueCommand("seek", String(ms)); } },
         playSong: function (path) {
             jt.log("svc.mp.playSong: " + path);
             cq = [];  //clear all previous pending transport/status requests
             try {
-                Android.playSong(path);
+                if(!app.scr.stubbed("startPlayback", null, notePlaybackState)) {
+                    Android.playSong(path); }
             } catch(e) {
                 jt.log("playSong exception: " + e);
                 mgrs.mp.playerFailure("Service crashed"); } },
@@ -135,7 +145,9 @@ app.svc = (function () {
             if(err) {
                 return jt.out(dbstatdiv, "Music read failed: " + err); }
             jt.out(dbstatdiv, "Fetching audio summary...");
-            dais = Android.getAudioItemSummary();
+            if(!app.scr.stubbed("requestMediaRead", null, function (mrd) {
+                dais = mrd; })) {
+                dais = Android.getAudioItemSummary(); }
             jt.out(dbstatdiv, "Parsing audio summary...");
             dais = mgrs.sg.parseAudioSummary(dais);
             jt.out(dbstatdiv, "Merging Digger data...");
@@ -158,7 +170,9 @@ app.svc = (function () {
             dbstatdiv = procdivid || "topdlgdiv";
             apresloadcmd = apresload || "";
             jt.out(dbstatdiv, "Reading music...");
-            Android.requestMediaRead(); },
+            if(!app.scr.stubbed("requestMediaRead", null, function () {
+                app.svc.mediaReadComplete(); })) {
+                Android.requestMediaRead(); } },
         verifyDatabase: function (dbo) {
             var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
             dbo.version = Android.getAppVersion();  //maybe diff since last run
@@ -296,9 +310,13 @@ app.svc = (function () {
             jt.byId("contentdiv").style.backgroundImage = cssbg;
             mgrs.loc.restoreState();  //remember previous state before reload
             try {
-                config = JSON.parse(Android.readConfig() || "{}");
-                dbo = JSON.parse(Android.readDigDat() || "{}"); }
-            catch(e) {
+                if(!app.scr.stubbed("readConfig", null, function (cd) {
+                    config = cd; })) {
+                    config = JSON.parse(Android.readConfig() || "{}"); }
+                if(!app.scr.stubbed("readDigDat", null, function (dd) {
+                    dbo = dd; })) {
+                    dbo = JSON.parse(Android.readDigDat() || "{}"); }
+            } catch(e) {
                 return jt.err("Initial data load failed: " + e); }
             config = config || {};  //default account set up in top.js
             dbo = mgrs.sg.verifyDatabase(dbo);
@@ -320,6 +338,8 @@ app.svc = (function () {
             app.deck.dispatch("hsu", "updateSynchronizedSongs", res.slice(1));
             return res; },
         hubSyncDat: function (data, contf, errf) {
+            if(app.scr.stubbed("hubsync", null, contf, errf)) {
+                return; }
             mgrs.hc.queueRequest("hubSyncDat", "/hubsync", "POST", data,
                                  function (res) {
                                      res = mgrs.loc.procSyncData(res);
@@ -329,6 +349,8 @@ app.svc = (function () {
             //local memory is up to date.
             return dbo.songs[updsong.path]; },
         makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
+            if(app.scr.stubbed("hubAcctCall" + endpoint, null, contf, errf)) {
+                return; }
             mgrs.hc.queueRequest(endpoint, "/" + endpoint, verb, data,
                                  contf, errf); }
     };  //end mgrs.loc returned functions
@@ -378,6 +400,8 @@ app.svc = (function () {
                                      res = mgrs.loc.procSyncData(res);
                                      contf(res); }, errf); },
         fanMessage: function (data, contf, errf) {
+            if(app.scr.stubbed("hubAcctCallmessages", null, contf)) {
+                return; }
             mgrs.hc.queueRequest("fanmsg", "/fanmsg", "POST", data,
                                  contf, errf); },
         copyToClipboard: function (txt, contf, errf) {
