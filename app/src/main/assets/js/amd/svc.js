@@ -274,22 +274,14 @@ app.svc = (function () {
             if(!stat.verified) {
                 return jt.err("Not writing bad data " + JSON.stringify(stat)); }
             Android.writeDigDat(JSON.stringify(dbo, null, 2)); },
-        updateSong: function (song, contf, ignore /*errf*/) {
-            app.copyUpdatedSongData(dbo.songs[song.path], song);
-            mgrs.loc.writeSongs();
-            jt.out("modindspan", "");  //turn off indicator light
-            app.top.dispatch("srs", "syncToHub");  //sched sync
-            if(contf) {
-                contf(dbo.songs[song.path]); } },
-        updateMultipleSongs: function (songs, contf/*, errf*/) {
-            var rsgs = [];
+        saveSongs: function (songs, contf/*, errf*/) {
+            var upds = [];
             songs.forEach(function (song) {
                 app.copyUpdatedSongData(dbo.songs[song.path], song);
-                rsgs.push(dbo.songs[song.path]); });
+                upds.push(dbo.songs[song.path]); });
             mgrs.loc.writeSongs();
-            app.top.dispatch("srs", "syncToHub");  //sched sync
             if(contf) {
-                contf(rsgs); } },
+                contf(upds); } },
         noteUpdatedState: function (label) {
             if(label === "deck") {
                 Android.noteState("deck",
@@ -423,7 +415,7 @@ return {
     songs: function () { return mgrs.loc.songs(); },
     fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
     fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
-    updateSong: function (song, cf, ef) { mgrs.loc.updateSong(song, cf, ef); },
+    saveSongs: function (songs, cf, ef) { mgrs.loc.saveSongs(songs, cf, ef); },
     noteUpdatedState: function (label) { mgrs.loc.noteUpdatedState(label); },
     mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
     playerFailure: function (err) { mgrs.mp.playerFailure(err); },
