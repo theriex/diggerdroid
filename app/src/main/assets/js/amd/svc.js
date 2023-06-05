@@ -287,15 +287,15 @@ app.svc = (function () {
                 Android.noteState("deck",
                                   JSON.stringify(app.deck.getState(
                                       mgrs.mp.getStateQueueMax()))); } },
-        restoreState: function () {
+        restoreState: function (songs) {
             var state = Android.getRestoreState("player");
             if(state) {
                 jt.log("restoreState player: " + state);
-                app.player.setState(JSON.parse(state)); }
+                app.player.setState(JSON.parse(state), songs); }
             state = Android.getRestoreState("deck");
             if(state) {
                 jt.log("restoreState deck: " + state);
-                app.deck.setState(JSON.parse(state)); } },
+                app.deck.setState(JSON.parse(state), songs); } },
         loadInitialData: function () {
             //background fails to load. Set explicitely so things are visible:
             const cssbg = "url('" + app.dr("/img/panelsbg.png") + "')";
@@ -312,6 +312,7 @@ app.svc = (function () {
                 return jt.err("Initial data load failed: " + e); }
             config = config || {};  //default account set up in top.js
             dbo = mgrs.sg.verifyDatabase(dbo);
+            mgrs.loc.restoreState(dbo.songs);  //update saved state w/latest dbo
             //let rest of app know data is ready, then check the library:
             const startdata = {"config":config, songdata:dbo};
             const uims = ["top",      //display login name
