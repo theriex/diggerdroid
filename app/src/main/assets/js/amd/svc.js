@@ -37,8 +37,9 @@ app.svc = (function () {
             qm = app.player.dispatch("slp", "limitToSleepQueueMax", qm);
             const dst = app.deck.getState(qm);  //songs currently on deck
             jt.log("requestStatusUpdate dst.det.length: " + dst.det.length);
+            const qstat = {dbts:mgrs.loc.getDigDat().dbts, deck:dst};
             if(!app.scr.stubbed("statusSync", null, notePlaybackState)) {
-                queueCommand("status", JSON.stringify(dst)); } },
+                queueCommand("status", JSON.stringify(qstat)); } },
         pause: function () {
             if(!app.scr.stubbed("pausePlayback", null, notePlaybackState)) {
                 queueCommand("pause"); } },
@@ -253,6 +254,7 @@ app.svc = (function () {
         loadDigDat: function (cbf) {
             try {
                 dbo = JSON.parse(Android.readDigDat() || "{}");
+                dbo.dbts = new Date().toISOString();
                 dbo = mgrs.sg.verifyDatabase(dbo); }
             catch(e) {
                 return jt.err("loadDigDat failed: " + e); }
@@ -307,7 +309,8 @@ app.svc = (function () {
                     config = JSON.parse(Android.readConfig() || "{}"); }
                 if(!app.scr.stubbed("readDigDat", null, function (dd) {
                     dbo = dd; })) {
-                    dbo = JSON.parse(Android.readDigDat() || "{}"); }
+                    dbo = JSON.parse(Android.readDigDat() || "{}");
+                    dbo.dbts = new Date().toISOString(); }
             } catch(e) {
                 return jt.err("Initial data load failed: " + e); }
             config = config || {};  //default account set up in top.js

@@ -39,7 +39,6 @@ import java.io.File
 import java.io.InputStream
 import java.net.URL
 import java.net.HttpURLConnection
-import java.text.SimpleDateFormat
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
 import java.util.Date
@@ -299,7 +298,7 @@ class DiggerAppInterface(private val context: MainActivity) {
         try {
             val callinfo = HubWebRequest(context, qname, reqnum,
                                          endpoint, verb, data)
-                context.execsvc.execute(callinfo)
+            context.execsvc.execute(callinfo)
         } catch(e: Exception) {
             Log.e(lognm, "Web request failed", e)
         }
@@ -345,6 +344,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
     var dur = 0
     var pos = 0
     var path = ""
+    var dbts = "1970-01-01T:00:00:00.00Z"
     var sipbst = ""    //service interface playback state
     var commok = false
 
@@ -371,8 +371,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                     val mp = das.mp!!
                     when(command) {
                         "status" -> {
-                            Log.d(lognm, "das.dst updated")
-                            das.dst = param
+                            das.updateQueue(param)
                             das.verifyNotice() }
                         "pause" -> {
                             sipbst = "paused"
@@ -386,6 +385,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                     path = das.playpath
                     dur = mp.getDuration()
                     pos = mp.getCurrentPosition()
+                    dbts = das.dbts
                     if(sipbst.isEmpty()) {  //figure out sipbst from service
                         if(das.pbstate == "ended") {
                             sipbst = "ended" }
@@ -440,7 +440,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
         commok = false  //reset indicator flag for next call
         val encpath = java.net.URLEncoder.encode(path, "utf-8")
         val statobj = ("{state:\"$sipbst\", pos:$pos, dur:$dur" +
-                       ", path:\"$encpath\", cc:$reqnum}")
+                       ", path:\"$encpath\", cc:$reqnum, dbts:\"$dbts\"}")
         val callback = "app.svc.notePlaybackStatus($statobj)"
         Log.d(lognm, "callback: " + callback)
         context.runOnUiThread(Runnable() { context.djs(callback) })
@@ -500,6 +500,7 @@ class DiggerAudioService : Service(),
     }
     //Playback state variables accessed locally and by DiggerASI
     var pbstate = "init"  //"playing"/"paused"/"ended"/"failed"
+    var dbts = "1970-01-01T:00:00:00.00Z"  //last database read
     var dst = ""   //most recently received Digger deck state
     var cts = System.currentTimeMillis()  //most recent UI communication time
     var failmsg = ""
@@ -519,8 +520,9 @@ class DiggerAudioService : Service(),
     }
 
     fun isostamp() : String {
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
-        return sdf.format(Date())
+        val now = java.time.Instant.now()
+        val ts = java.time.format.DateTimeFormatter.ISO_INSTANT.format(now)
+        return ts;
     }
 
     //Called from the UI, or MediaPlayer.OnCompletion.  When initially
@@ -607,7 +609,8 @@ class DiggerAudioService : Service(),
         val song = songs.getJSONObject(path)
         val pc = song.optInt("pc", 0)
         song.put("pc", pc + 1)
-        song.put("lp", isostamp())
+        dbts = isostamp()  //note database update time for app UI sync
+        song.put("lp", dbts)
         Log.d(lognm, "    lp: " + song["lp"])
         songs.put(path, song)
         dat.put("songs", songs)
@@ -633,6 +636,19 @@ class DiggerAudioService : Service(),
             setContentIntent(pndi)
             svcntf = build() }
         return svcntf
+    }
+
+    fun updateQueue(qstatstr: String) {
+        val qstat = JSONObject(qstatstr)
+        val qdbt = qstat.get("dbts").toString()
+        if(qdbt.compareTo(dbts) >= 0) {
+            dbts = qdbt
+            dst = (qstat.getJSONObject("deck")).toString()
+            Log.d(lognm, "updateQueue dst updated, qdbt " + qdbt + " >= " +
+                             "dbts: " + dbts + ", qstatstr: " + qstatstr) }
+        else {  //stale data from outdated app interface coming back to life
+            Log.d(lognm, "updateQueue dst NOT updated, qdbt " + qdbt + " < " +
+                             "dbts: " + dbts + ", qstatstr: " + qstatstr) }
     }
 
     //Seems wasteful to update the notice text every few seconds, but if
@@ -661,7 +677,7 @@ class DiggerAudioService : Service(),
 
     override fun onCreate() {
         super.onCreate();
-
+        Log.d(lognm, "DiggerAudioService onCreate " + isostamp())
         pbstate = "init"
         dst = ""
         failmsg = ""
@@ -678,7 +694,7 @@ class DiggerAudioService : Service(),
         mse.isActive = true
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(intent: Intent?, flags: Int, stid: Int): Int {
         //intent.action is declared in manifest and used by startService
         if(intent != null) {
             val pathuri = intent.data!!  //force Uri? to Uri
@@ -719,7 +735,7 @@ class DiggerAudioService : Service(),
     }
 
     //MediaPlayer.OnCompletionListener interface
-    //containing service keeps to keep binding and state vars
+    //containing service keeps binding and state vars
     override fun onCompletion(ignore: MediaPlayer) {
         val now = System.currentTimeMillis()
         if(!dst.isEmpty()) {  //have state info, start autoplay
