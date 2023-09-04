@@ -640,7 +640,7 @@ class DiggerAudioService : Service(),
 
     fun updateQueue(qstatstr: String) {
         val qstat = JSONObject(qstatstr)
-        val qdbt = qstat.get("dbts").toString()
+        val qdbt = qstat.optString("dbts", "1970-01-01T:00:00:00.00Z")
         if(qdbt.compareTo(dbts) >= 0) {
             dbts = qdbt
             dst = (qstat.getJSONObject("deck")).toString()
