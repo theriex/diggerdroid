@@ -621,13 +621,13 @@ class DiggerAudioService : Service(),
     fun makeFgSvcN(text: String) : Notification {
         var svcntf: Notification
         val context = getApplicationContext()
-        val pndi = PendingIntent.getActivity(
-            context,
-            0,   //requestCode
-            Intent("com.diggerhub.digger.MainActivity"),
-            //Targeting S+ (version 31 and above) requires mutability flag
-            (PendingIntent.FLAG_IMMUTABLE or
-             PendingIntent.FLAG_UPDATE_CURRENT))
+        val pndi: PendingIntent =
+            Intent(context, MainActivity::class.java).let { intent ->
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                PendingIntent.getActivity(context, 0, intent,
+                                          (PendingIntent.FLAG_IMMUTABLE or
+                                           PendingIntent.FLAG_UPDATE_CURRENT)) }
         //DiggerSvcChan is a unique channel name created in DiggerApp.
         NotificationCompat.Builder(context, "DiggerSvcChan").apply {
             setContentTitle("Digger Music Service")
