@@ -632,7 +632,7 @@ class DiggerAudioService : Service(),
         NotificationCompat.Builder(context, "DiggerSvcChan").apply {
             setContentTitle("Digger Music Service")
             setContentText(text)
-            setSmallIcon(R.mipmap.ic_launcher)
+            setSmallIcon(R.drawable.ic_stat_name)
             setContentIntent(pndi)
             svcntf = build() }
         return svcntf
