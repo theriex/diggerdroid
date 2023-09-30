@@ -338,6 +338,8 @@ app.svc = (function () {
                 return; }
             mgrs.hc.queueRequest("hubSyncDat", "/hubsync", "POST", data,
                                  function (res) {
+                                     app.top.dispatch("srs", "hubStatInfo",
+                                                      "receiving...");
                                      res = mgrs.loc.procSyncData(res);
                                      contf(res); }, errf); },
         noteUpdatedSongData: function (updsong) {
