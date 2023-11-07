@@ -501,7 +501,7 @@ class DiggerAudioService : Service(),
     //Playback state variables accessed locally and by DiggerASI
     var pbstate = "init"  //"playing"/"paused"/"ended"/"failed"
     var dbts = "1970-01-01T:00:00:00.00Z"  //last database read
-    var dst = ""   //most recently received Digger deck state
+    var dst = ""  //most recently received Digger deck state
     var cts = System.currentTimeMillis()  //most recent UI communication time
     var failmsg = ""
     var playpath = ""
@@ -555,47 +555,20 @@ class DiggerAudioService : Service(),
             } }
     }
 
-    fun getNextAlbumSongPath(dso: JSONObject) : String {
-        val det = dso.getJSONObject("det")
-        val info = det.getJSONObject("info")
-        var ci = info.getInt("ci")
-        ci += 1
-        val songs = info.getJSONArray("songs")
-        if(ci < songs.length()) {
-            val song = songs.getJSONObject(ci)
-            val path = song.getString("path")
-            info.put("ci", ci)
-            det.put("info", info)
-            dso.put("det", det)
-            dst = dso.toString()
-            Log.d(lognm, "  album path: " + path)
-            return path }
-        Log.d(lognm, "  No songs left on album")
-        return ""
-    }
-
-    fun getNextDeckSongPath(dso: JSONObject) : String {
-        val det = dso.getJSONArray("det")
-        Log.d(lognm, "  det.length: " + det.length())
-        if(det.length() == 0) {
+    fun popNextSongPathFromState() : String {
+        val dso = JSONObject(dst)
+        val qsi = dso.getJSONArray("qsi")
+        Log.d(lognm, "popNextSongPathFromState qsi.length: " + qsi.length())
+        if(qsi.length() == 0) {
             Log.d(lognm, "  No songs left on deck")
             return "" }
-        val song = det.remove(0) as JSONObject
+        val song = qsi.remove(0) as JSONObject
         val path = song.getString("path")
-        dso.put("det", det)
+        dso.put("qsi", qsi)
         dso.put("npsi", song)
         dst = dso.toString()
-        Log.d(lognm, "  deck path: " + path)
-        return path
-    }
-
-    fun getNextSongPathFromState() : String {
-        val dso = JSONObject(dst)
-        val disp = dso.getString("disp")
-        Log.d(lognm, "getNextSongPathFromState disp: " + disp)
-        if(disp == "album") {
-            return getNextAlbumSongPath(dso) }
-        return getNextDeckSongPath(dso)
+        Log.d(lognm, "  song path: " + path)
+        return path;
     }
 
     //should not collide with paused/stopped activity thread since autoplaying
@@ -623,8 +596,6 @@ class DiggerAudioService : Service(),
         val context = getApplicationContext()
         val pndi: PendingIntent =
             Intent(context, MainActivity::class.java).let { intent ->
-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 PendingIntent.getActivity(context, 0, intent,
                                           (PendingIntent.FLAG_IMMUTABLE or
                                            PendingIntent.FLAG_UPDATE_CURRENT)) }
@@ -641,9 +612,9 @@ class DiggerAudioService : Service(),
     fun updateQueue(qstatstr: String) {
         val qstat = JSONObject(qstatstr)
         val qdbt = qstat.optString("dbts", "1970-01-01T:00:00:00.00Z")
-        if(qdbt.compareTo(dbts) >= 0) {
-            dbts = qdbt
-            dst = (qstat.getJSONObject("deck")).toString()
+        if(qdbt.compareTo(dbts) >= 0) {  //received dbts is same or newer
+            dbts = qdbt  //update local dbts with received value
+            dst = qstatstr
             Log.d(lognm, "updateQueue dst updated, qdbt " + qdbt + " >= " +
                              "dbts: " + dbts + ", qstatstr: " + qstatstr) }
         else {  //stale data from outdated app interface coming back to life
@@ -651,8 +622,8 @@ class DiggerAudioService : Service(),
                              "dbts: " + dbts + ", qstatstr: " + qstatstr) }
     }
 
-    //Seems wasteful to update the notice text every few seconds, but if
-    //system may ignore a notice text change due to sleep or whatever.
+    //Seems flailing to update the notice text every few seconds, but the
+    //system may ignore an interim notice text change due to sleep etc.
     fun verifyNotice() {
         var ntxt = defaultNoticeText
         if(playpath == "") {
@@ -740,7 +711,7 @@ class DiggerAudioService : Service(),
         val now = System.currentTimeMillis()
         if(!dst.isEmpty()) {  //have state info, start autoplay
             Log.d(lognm, "onCompletion autoplay " + isostamp())
-            val path = getNextSongPathFromState()
+            val path = popNextSongPathFromState()
             if(!path.isEmpty()) {  //have next song to play
                 noteSongPlayed(path)
                 dasPlaySong(Uri.fromFile(File(path))) }
