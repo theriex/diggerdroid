@@ -49,7 +49,7 @@ app.svc = (function () {
             jt.log("svc.mp.playSong: " + path);
             cq = [];  //clear all previous pending transport/status requests
             try {
-                if(!app.scr.stubbed("startPlayback", null, notePlaybackState)) {
+                if(!app.scr.stubbed("startPlayback", path, notePlaybackState)) {
                     Android.playSong(path); }
             } catch(e) {
                 jt.log("playSong exception: " + e);
@@ -142,8 +142,8 @@ app.svc = (function () {
             if(err) {
                 return jt.out(dbstatdiv, "Music read failed: " + err); }
             jt.out(dbstatdiv, "Fetching audio summary...");
-            if(!app.scr.stubbed("requestMediaRead", null, function (mrd) {
-                dais = mrd; })) {
+            if(!app.scr.stubbed("requestMediaRead", null,
+                                function (mrd) { dais = mrd; })) {
                 dais = Android.getAudioItemSummary(); }
             jt.out(dbstatdiv, "Parsing audio summary...");
             dais = mgrs.sg.parseAudioSummary(dais);
@@ -167,8 +167,9 @@ app.svc = (function () {
             dbstatdiv = procdivid || "topdlgdiv";
             apresloadcmd = apresload || "";
             jt.out(dbstatdiv, "Reading music...");
-            if(!app.scr.stubbed("requestMediaRead", null, function () {
-                app.svc.mediaReadComplete(); })) {
+            if(!app.scr.stubbed("requestMediaRead", null,
+                                function () {
+                                    app.svc.mediaReadComplete(); })) {
                 Android.requestMediaRead(); } },
         verifyDatabase: function (dbo) {
             var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
@@ -299,11 +300,11 @@ app.svc = (function () {
             jt.byId("contentdiv").style.backgroundImage = cssbg;
             mgrs.loc.restoreState();  //remember previous state before reload
             try {
-                if(!app.scr.stubbed("readConfig", null, function (cd) {
-                    config = cd; })) {
+                if(!app.scr.stubbed("readConfig", null,
+                                    function (cd) { config = cd; })) {
                     config = JSON.parse(Android.readConfig() || "{}"); }
-                if(!app.scr.stubbed("readDigDat", null, function (dd) {
-                    dbo = dd; })) {
+                if(!app.scr.stubbed("readDigDat", null,
+                                    function (dd) { dbo = dd; })) {
                     dbo = JSON.parse(Android.readDigDat() || "{}"); }
             } catch(e) {
                 return jt.err("Initial data load failed: " + e); }
