@@ -34,7 +34,9 @@ app.svc = (function () {
         getStateQueueMax: function () { return stateQueueMax; },
         requestStatusUpdate: function (/*contf*/) {
             if(!app.scr.stubbed("statusSync", null, notePlaybackState)) {
-                const dstat = app.deck.getPlaybackState(false, "ssd");
+                const dstat = app.deck.getPlaybackState(true, "ssd");
+                dstat.npsi = dstat.qsi[0];
+                dstat.qsi = dstat.qsi.slice(1);
                 queueCommand("status", JSON.stringify(dstat)); } },
         pause: function () {
             if(!app.scr.stubbed("pausePlayback", null, notePlaybackState)) {
@@ -295,9 +297,6 @@ app.svc = (function () {
                 jt.log("restoreState deck: " + state);
                 app.deck.setState(JSON.parse(state), songs); } },
         loadInitialData: function () {
-            //background fails to load. Set explicitely so things are visible:
-            const cssbg = "url('" + app.dr("/img/panelsbg.png") + "')";
-            jt.byId("contentdiv").style.backgroundImage = cssbg;
             mgrs.loc.restoreState();  //remember previous state before reload
             try {
                 if(!app.scr.stubbed("readConfig", null,

@@ -629,7 +629,7 @@ class DiggerAudioService : Service(),
         if(playpath == "") {
             ntxt = "Playback stopped" }
         else if(dst != "") {
-            var dso = JSONObject(dst)
+            val dso = JSONObject(dst)
             if(dso.has("npsi")) {
                 var song = dso.getJSONObject("npsi")
                 ntxt = song.getString("ti") + " - " + song.getString("ar") } }
