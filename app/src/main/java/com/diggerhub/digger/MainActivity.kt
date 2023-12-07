@@ -376,12 +376,12 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                         "pause" -> {
                             sipbst = "paused"
                             mp.pause() }
-                       "resume" -> {
-                           sipbst = "playing"
-                           mp.start() }
-                       "seek" -> mp.seekTo(param.toInt())
-                       else -> {
-                           Log.d(lognm, "unknown command " + command) } }
+                        "resume" -> {
+                            sipbst = "playing"
+                            mp.start() }
+                        "seek" -> mp.seekTo(param.toInt())
+                        else -> {
+                            Log.d(lognm, "unknown command " + command) } }
                     path = das.playpath
                     dur = mp.getDuration()
                     pos = mp.getCurrentPosition()

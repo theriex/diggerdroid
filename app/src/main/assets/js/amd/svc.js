@@ -77,9 +77,11 @@ app.svc = (function () {
                 stat.path = jt.dec(stat.path);    //undo File encode
                 stat.path = stat.path.slice(7); } //remove "file://" prefix
             app.player.dispatch("mob", "notePlaybackStatus", stat);
-            stat.song = app.player.song();
-            Android.noteState("player", JSON.stringify(stat));
-            mgrs.loc.noteUpdatedState("deck");
+            const np = app.player.song();
+            if(np && np.path === stat.path) {
+                stat.song = np;
+                Android.noteState("player", JSON.stringify(stat));
+                mgrs.loc.noteUpdatedState("deck"); }
             const processed = cq.shift();
             jt.log("svc.mp.notePlaybackStatus finished " + processed.cc +
                    ": " + processed.cmd);
@@ -288,14 +290,15 @@ app.svc = (function () {
                                   JSON.stringify(app.deck.getState(
                                       mgrs.mp.getStateQueueMax()))); } },
         restoreState: function (songs) {
-            var state = Android.getRestoreState("player");
-            if(state) {
-                jt.log("restoreState player: " + state);
-                app.player.setState(JSON.parse(state), songs); }
-            state = Android.getRestoreState("deck");
-            if(state) {
-                jt.log("restoreState deck: " + state);
-                app.deck.setState(JSON.parse(state), songs); } },
+            jt.log("restoreState checking for saved state, songs: " + songs);
+            const playstate = Android.getRestoreState("player");
+            if(playstate) {
+                jt.log("restoreState player: " + playstate);
+                app.player.setState(JSON.parse(playstate), songs); }
+            const deckstate = Android.getRestoreState("deck");
+            if(deckstate) {
+                jt.log("restoreState deck: " + deckstate);
+                app.deck.setState(JSON.parse(deckstate), songs); } },
         loadInitialData: function () {
             mgrs.loc.restoreState();  //remember previous state before reload
             try {
