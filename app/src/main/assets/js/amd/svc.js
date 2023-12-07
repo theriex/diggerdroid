@@ -14,10 +14,17 @@ app.svc = (function () {
         var cq = [];
         const stateQueueMax = 200;  //generally 6+ hrs of music
         const mperrstat = "MediaPlayer error";
+        const maxRetry = 3;
         function processNextCommand () {
             if(!cq || !cq.length) { return; }  //queue previously cleared
             //result delivered in notePlaybackStatus callback
             Android.serviceInteraction(cq[0].cmd, cq[0].param, cq[0].cc); }
+        function commandCompleted (compstat) {
+            const processed = cq.shift();
+            jt.log("svc.mp.notePlaybackStatus " + compstat + " " +
+                   processed.cc + ": " + processed.cmd);
+            if(cq.length) {
+                processNextCommand(); } }
         function queueCommand (command, parameter) {
             if(cq.length && cq[cq.length - 1].cmd === command) {
                 cq[cq.length - 1].param = parameter || "";
@@ -25,7 +32,8 @@ app.svc = (function () {
                               " already queued for processing."); }
             rqn += 1;
             jt.log("svc.mp.queueCommand " + rqn + ": " + command);
-            cq.push({cmd:command, param:parameter || "", cc:rqn});
+            cq.push({cmd:command, param:parameter || "", cc:rqn,
+                     retries:maxRetry});
             if(cq.length === 1) {  //no other ongoing processing
                 processNextCommand(); } }
         function notePlaybackState (stat) {
@@ -64,14 +72,18 @@ app.svc = (function () {
             jt.log("svc.mp.notePlaybackStatus stat: " + JSON.stringify(stat));
             if(!cq.length) {  //no command in queue to connect this result to
                 return jt.log("svc.mp.notePlaybackStatus cq empty"); }
-            if(!stat.state) {  //indeterminate result, retry
-                setTimeout(processNextCommand, 200);
-                return jt.log("svc.mp.notePlaybackStatus retrying..."); }
+            if(!stat.state) {  //indeterminate result, retry or give up
+                if(cq[0].retries > 0) {
+                    cq[0].retries -= 1;
+                    const waitms = (maxRetry - cq[0].retries) * 200;
+                    setTimeout(processNextCommand, waitms);
+                    return jt.log("svc.mp.notePlaybackStatus retrying..."); }
+                //not a failure if starting up on mobile and nothing playing yet
+                return commandCompleted("expired"); }
             if(stat.state.startsWith("failed")) {
-                jt.log("notePlaybackStatus server " + stat.state);
-                app.player.dispatch("mob", "handlePlayFailure",
-                                    mperrstat, stat.state);
-                return; }
+                jt.log("svc.notePlaybackStatus " + stat.state);
+                return app.player.dispatch("mob", "handlePlayFailure",
+                                           mperrstat, stat.state); }
             if(stat.path) {
                 stat.path = jt.dec(stat.path);    //undo URI encode
                 stat.path = jt.dec(stat.path);    //undo File encode
@@ -82,11 +94,7 @@ app.svc = (function () {
                 stat.song = np;
                 Android.noteState("player", JSON.stringify(stat));
                 mgrs.loc.noteUpdatedState("deck"); }
-            const processed = cq.shift();
-            jt.log("svc.mp.notePlaybackStatus finished " + processed.cc +
-                   ": " + processed.cmd);
-            if(cq.length) {
-                processNextCommand(); } }
+            commandCompleted("finished"); }
     };  //end mgrs.mp returned functions
     }());
 
