@@ -21,8 +21,11 @@ app.svc = (function () {
             Android.serviceInteraction(cq[0].cmd, cq[0].param, cq[0].cc); }
         function commandCompleted (compstat) {
             const processed = cq.shift();
-            jt.log("svc.mp.notePlaybackStatus " + compstat + " " +
-                   processed.cc + ": " + processed.cmd);
+            const logpre = "svc.mp.commandCompleted " + compstat + " ";
+            if(processed) {
+                jt.log(logpre + processed.cc + ": " + processed.cmd); }
+            else {
+                jt.log(logpre + "empty command queue"); }
             if(cq.length) {
                 processNextCommand(); } }
         function queueCommand (command, parameter) {
@@ -69,6 +72,7 @@ app.svc = (function () {
             app.player.dispatch("mob", "handlePlayFailure",
                                 mperrstat, err); },
         notePlaybackStatus: function (stat) {
+            var compstat = "";
             jt.log("svc.mp.notePlaybackStatus stat: " + JSON.stringify(stat));
             if(!cq.length) {  //no command in queue to connect this result to
                 return jt.log("svc.mp.notePlaybackStatus cq empty"); }
@@ -79,7 +83,7 @@ app.svc = (function () {
                     setTimeout(processNextCommand, waitms);
                     return jt.log("svc.mp.notePlaybackStatus retrying..."); }
                 //not a failure if starting up on mobile and nothing playing yet
-                return commandCompleted("expired"); }
+                compstat = "expired"; }
             if(stat.state.startsWith("failed")) {
                 jt.log("svc.notePlaybackStatus " + stat.state);
                 return app.player.dispatch("mob", "handlePlayFailure",
@@ -94,7 +98,7 @@ app.svc = (function () {
                 stat.song = np;
                 Android.noteState("player", JSON.stringify(stat));
                 mgrs.loc.noteUpdatedState("deck"); }
-            commandCompleted("finished"); }
+            commandCompleted(compstat || "finished"); }
     };  //end mgrs.mp returned functions
     }());
 
@@ -298,7 +302,7 @@ app.svc = (function () {
                                   JSON.stringify(app.deck.getState(
                                       mgrs.mp.getStateQueueMax()))); } },
         restoreState: function (songs) {
-            jt.log("restoreState checking for saved state, songs: " + songs);
+            jt.log("svc.restoreState songs obj: " + songs);
             const playstate = Android.getRestoreState("player");
             if(playstate) {
                 jt.log("restoreState player: " + playstate);
