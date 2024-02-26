@@ -208,7 +208,8 @@ class MainActivity : AppCompatActivity() {
                 "discnum" to MediaStore.Audio.Media.DISC_NUMBER,
                 "data" to MediaStore.Audio.Media.DATA,
                 "relpath" to MediaStore.Audio.Media.RELATIVE_PATH,
-                "dispname" to MediaStore.Audio.Media.DISPLAY_NAME)) }
+                "dispname" to MediaStore.Audio.Media.DISPLAY_NAME,
+                "genre" to MediaStore.Audio.Media.GENRE)) }
         else {
             queryAudio(mapOf(
                 "title" to MediaStore.Audio.Media.TITLE,

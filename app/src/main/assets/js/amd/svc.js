@@ -116,16 +116,28 @@ app.svc = (function () {
     mgrs.sg = (function () {
         var dbstatdiv = "topdlgdiv";
         var apresloadcmd = "";
-    return {
-        setArtistFromPath: function (song) {
+        function parseAudioSummary (dais) {
+            dais = JSON.parse(dais);
+            dais = dais.filter((d) =>  //title and playback path required
+                d.title && (d.data || (d.relpath && d.dispname)));
+            dais.forEach(function (dai) {  //fill fields, make playback path
+                dai.artist = dai.artist || "Unknown";
+                dai.album = dai.album || "Singles";
+                dai.genre = dai.genre || "";
+                if(dai.data) {  //prefer full path if available, need file URI.
+                    dai.path = dai.data; }
+                else {  //better than nothing, but file path unrecoverable
+                    dai.path = dai.relpath + dai.dispname; } });
+            return dais; }
+        function setArtistFromPath (song) {
             const pes = song.path.split("/");
             song.ti = pes[pes.length - 1];
             if(pes.length >= 3) {
                 song.ar = pes[pes.length - 3];
                 song.ab = pes[pes.length - 2]; }
             else if(pes.length >= 2) {
-                song.ar = pes[pes.length - 2]; } },
-        updateDataFromDroidAudio: function (dbo, dais) {
+                song.ar = pes[pes.length - 2]; } }
+        function updateDataFromDroidAudio (dbo, dais) {
             dais.forEach(function (dai) {
                 var song = dbo.songs[dai.path];
                 if(!song) {
@@ -138,21 +150,11 @@ app.svc = (function () {
                 song.ti = dai.title;
                 song.ar = dai.artist;
                 song.ab = dai.album;
+                song.genrejson = JSON.stringify(dai.genre);
                 app.top.dispatch("dbc", "verifySong", song);
                 if(!song.ar) {  //artist required for hub sync
-                    mgrs.sg.setArtistFromPath(song); } }); },
-        parseAudioSummary: function (dais) {
-            dais = JSON.parse(dais);
-            dais = dais.filter((d) =>  //title and playback path required
-                d.title && (d.data || (d.relpath && d.dispname)));
-            dais.forEach(function (dai) {  //fill fields, make playback path
-                dai.artist = dai.artist || "Unknown";
-                dai.album = dai.album || "Singles";
-                if(dai.data) {  //prefer full path if available, need file URI.
-                    dai.path = dai.data; }
-                else {  //better than nothing, but file path unrecoverable
-                    dai.path = dai.relpath + dai.dispname; } });
-            return dais; },
+                    setArtistFromPath(song); } }); }
+    return {
         mediaReadComplete: function (err) {
             var dbo; var dais;
             if(err) {
@@ -162,7 +164,7 @@ app.svc = (function () {
                                 function (mrd) { dais = mrd; })) {
                 dais = Android.getAudioItemSummary(); }
             jt.out(dbstatdiv, "Parsing audio summary...");
-            dais = mgrs.sg.parseAudioSummary(dais);
+            dais = parseAudioSummary(dais);  //filter and fill metadata
             jt.out(dbstatdiv, "Merging Digger data...");
             dbo = mgrs.loc.getDatabase();
             Object.values(dbo.songs).forEach(function (s) {  //mark all deleted
@@ -170,7 +172,7 @@ app.svc = (function () {
                 if(!s.fq.startsWith("D")) {
                     s.fq = "D" + s.fq; } });
             dbo.songcount = dais.length;
-            mgrs.sg.updateDataFromDroidAudio(dbo, dais);
+            updateDataFromDroidAudio(dbo, dais);  //set ti/ar/ab
             jt.out("countspan", String(dbo.songcount) + "&nbsp;songs");
             mgrs.loc.writeSongs();
             jt.out(dbstatdiv, "");
