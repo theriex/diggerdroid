@@ -414,9 +414,11 @@ app.svc = (function () {
                 return contf(); }
             errf(); },
         tlasupp: function (act) {
-            if(act.id === "ignorefldrsbutton") {
-                return false; }
-            return true; }
+            const unsupp = {
+                "updversionnote":"Play Store updates after server",
+                "ignorefldrsbutton":"No music file folders on Android",
+                "readfilesbutton":"All media queried at app startup"};
+            return (!act.id || !unsupp[act.id]); }
     };  //end mgrs.gen returned functions
     }());
 
