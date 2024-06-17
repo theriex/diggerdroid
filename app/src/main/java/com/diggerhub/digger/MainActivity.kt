@@ -363,7 +363,8 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
             if(!das.failmsg.isEmpty()) {  //note crash
                 Log.d(lognm, "das.failmsg: " + das.failmsg)
                 sipbst = "failed " + das.failmsg }
-            else if(das.mp == null) {  //no player yet, caller retries
+            else if(das.mp == null || das.mpst.isEmpty()) {
+                //no player, or player not ready yet. caller retries
                 path = ""
                 dur = 0
                 pos = 0 }
@@ -485,6 +486,7 @@ class DiggerAudioService : Service(),
     val svcNoticeId = 1   //1 is used in most if not all sample code
     val defaultNoticeText = "Playing your matching songs."
     var mp: MediaPlayer? = null
+    var mpst = ""  //partial state info.  not safe to call if empty
     lateinit var mse: MediaSessionCompat  //session has same lifespan as service
     //create a callback object extending the required abstract base class
     val mscb: MediaSessionCompat.Callback = object: MediaSessionCompat.Callback() {  //support pause button on bluetooth headsets
@@ -573,22 +575,29 @@ class DiggerAudioService : Service(),
     }
 
     //should not collide with paused/stopped activity thread since autoplaying
-    fun noteSongPlayed(path: String) {
+    fun noteSongPlayed(path: String) : Boolean {
         Log.d(lognm, "noteSongPlayed " + path)
         val ddf = File(getApplicationContext().filesDir, "digdat.json")
         val inputStream: InputStream = ddf.inputStream()
         val text = inputStream.bufferedReader().use { it.readText() }
         val dat = JSONObject(text)
         val songs = dat.getJSONObject("songs")
-        val song = songs.getJSONObject(path)
-        val pc = song.optInt("pc", 0)
-        song.put("pc", pc + 1)
-        dbts = isostamp()  //note database update time for app UI sync
-        song.put("lp", dbts)
-        Log.d(lognm, "    lp: " + song["lp"])
-        songs.put(path, song)
-        dat.put("songs", songs)
-        ddf.writeText(dat.toString(2))  //human readable 2 indent spaces
+        var updated = true
+        try {  //if for any reason we get a bad path, don't fatally crash
+            val song = songs.getJSONObject(path)
+            val pc = song.optInt("pc", 0)
+            song.put("pc", pc + 1)
+            dbts = isostamp()  //note database update time for app UI sync
+            song.put("lp", dbts)
+            Log.d(lognm, "    lp: " + song["lp"])
+            songs.put(path, song)
+            dat.put("songs", songs)
+            ddf.writeText(dat.toString(2))  //human readable 2 indent spaces
+        } catch(e: Exception) {
+            Log.e(lognm, "noteSongPlayed failed.", e)
+            Log.d(lognm, "noteSongPlayed failed on path: " + path)
+            updated = false }
+        return updated
     }
 
     //create the required ForegroundService Notification and return it.
@@ -683,11 +692,13 @@ class DiggerAudioService : Service(),
         mse.release()
         mp?.release()
         mp = null
+        mpst = ""
     }
 
     //MediaPlayer.OnPreparedListener interface
     override fun onPrepared(mediaPlayer: MediaPlayer) {
         mp?.start()  //question mark is from doc example. Probably right.
+        mpst = "prepared"
     }
 
     //MediaPlayer.OnErrorListener interface
@@ -713,9 +724,15 @@ class DiggerAudioService : Service(),
         if(!dst.isEmpty()) {  //have state info, start autoplay
             Log.d(lognm, "onCompletion autoplay " + isostamp())
             val path = popNextSongPathFromState()
-            if(!path.isEmpty()) {  //have next song to play
-                noteSongPlayed(path)
-                dasPlaySong(Uri.fromFile(File(path))) }
+            if(path == "DIGGERSLEEPMARKER") {
+                Log.i(lognm, "Ending at DIGGERSLEEPMARKER")
+                pbstate = "ended" }
+            else if(!path.isEmpty()) {  //have next song to play
+                if(noteSongPlayed(path)) {
+                    dasPlaySong(Uri.fromFile(File(path))) }
+                else {
+                    Log.d(lognm, "onCompletion retrying noteSongPlayed failure")
+                    onCompletion(ignore) } }
             else {
                 Log.i(lognm, "No path for next song, ending.")
                 pbstate = "ended" } }

@@ -15,6 +15,7 @@ app.svc = (function () {
         const stateQueueMax = 200;  //generally 6+ hrs of music
         const mperrstat = "MediaPlayer error";
         const maxRetry = 3;
+        const sleepstat = {};
         function processNextCommand () {
             if(!cq || !cq.length) { return; }  //queue previously cleared
             //result delivered in notePlaybackStatus callback
@@ -58,6 +59,10 @@ app.svc = (function () {
         seek: function (ms) {
             if(!app.scr.stubbed("seekToOffset", null, notePlaybackState)) {
                 queueCommand("seek", String(ms)); } },
+        sleep: function (count, cmd, cbf) {
+            sleepstat.count = count;  //rcv appropriately truncated|restored
+            sleepstat.cmd = cmd;      //queue on next status update
+            sleepstat.cbf = cbf; },
         playSong: function (path) {
             jt.log("svc.mp.playSong: " + path);
             cq = [];  //clear all previous pending transport/status requests
@@ -84,6 +89,9 @@ app.svc = (function () {
                     return jt.log("svc.mp.notePlaybackStatus retrying..."); }
                 //not a failure if starting up on mobile and nothing playing yet
                 compstat = "expired"; }
+            if(sleepstat.cbf) {
+                sleepstat.cbf(sleepstat.cmd);
+                sleepstat.cbf = null; }
             if(stat.state.startsWith("failed")) {
                 jt.log("svc.notePlaybackStatus " + stat.state);
                 return app.player.dispatch("mob", "handlePlayFailure",
@@ -304,7 +312,11 @@ app.svc = (function () {
                                   JSON.stringify(app.deck.getState(
                                       mgrs.mp.getStateQueueMax()))); } },
         restoreState: function (songs) {
-            jt.log("svc.restoreState songs obj: " + songs);
+            if(!songs) {
+                jt.log("svc.restoreState initial check no songs"); }
+            else {
+                jt.log("svc.restoreState with " + Object.keys(songs).length +
+                       " songs"); }
             const playstate = Android.getRestoreState("player");
             if(playstate) {
                 jt.log("restoreState player: " + playstate);
