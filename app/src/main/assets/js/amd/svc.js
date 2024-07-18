@@ -62,7 +62,9 @@ app.svc = (function () {
         sleep: function (count, cmd, cbf) {
             sleepstat.count = count;  //rcv appropriately truncated|restored
             sleepstat.cmd = cmd;      //queue on next status update
-            sleepstat.cbf = cbf; },
+            sleepstat.cbf = cbf || null;
+            if(cmd === "cancel") {
+                app.player.next(); } },
         playSong: function (path) {
             jt.log("svc.mp.playSong: " + path);
             cq = [];  //clear all previous pending transport/status requests
