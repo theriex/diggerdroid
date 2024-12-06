@@ -7,15 +7,15 @@ app.svc = (function () {
 
     var mgrs = {};  //general container for managers
 
-
-    //Media Playback manager handles transport and playback calls
+    //Media Playback manager handles transport and playback calls.
     mgrs.mp = (function () {
+        const srd = {  //status request data
+            qmode:"statonly",  //"updnpqsi" if sending new playback queue
+            npsi:null,         //now playing song info (ti/ar/path)
+            qsi:null};         //queued songs info (remaining song info array)
         var rqn = 0;
         var cq = [];
-        const stateQueueMax = 200;  //generally 6+ hrs of music
-        const mperrstat = "MediaPlayer error";
         const maxRetry = 3;
-        const sleepstat = {};
         function processNextCommand () {
             if(!cq || !cq.length) { return; }  //queue previously cleared
             //result delivered in notePlaybackStatus callback
@@ -40,75 +40,70 @@ app.svc = (function () {
                      retries:maxRetry});
             if(cq.length === 1) {  //no other ongoing processing
                 processNextCommand(); } }
-        function notePlaybackState (stat) {
-            app.player.dispatch("mob", "notePlaybackStatus", stat); }
-    return {
-        getStateQueueMax: function () { return stateQueueMax; },
-        requestStatusUpdate: function (/*contf*/) {
-            if(!app.scr.stubbed("statusSync", null, notePlaybackState)) {
-                const dstat = app.deck.getPlaybackState(true, "ssd");
-                dstat.npsi = dstat.qsi[0];
-                dstat.qsi = dstat.qsi.slice(1);
-                queueCommand("status", JSON.stringify(dstat)); } },
-        pause: function () {
-            if(!app.scr.stubbed("pausePlayback", null, notePlaybackState)) {
-                queueCommand("pause"); } },
-        resume: function () {
-            if(!app.scr.stubbed("resumePlayback", null, notePlaybackState)) {
-                queueCommand("resume"); } },
-        seek: function (ms) {
-            if(!app.scr.stubbed("seekToOffset", null, notePlaybackState)) {
-                queueCommand("seek", String(ms)); } },
-        sleep: function (count, cmd, cbf) {
-            sleepstat.count = count;  //rcv appropriately truncated|restored
-            sleepstat.cmd = cmd;      //queue on next status update
-            sleepstat.cbf = cbf || null;
-            if(cmd === "cancel") {
-                app.player.next(); } },
-        playSong: function (path) {
-            jt.log("svc.mp.playSong: " + path);
-            cq = [];  //clear all previous pending transport/status requests
+        function ssd (song) {  //simplified song details
+            return {ti:song.ti, ar:song.ar, path:song.path}; }
+        function platRequestPlaybackStatus () {
+            queueCommand("status", JSON.stringify(srd)); }
+        function playAndSendQueue () {
             try {
-                if(!app.scr.stubbed("startPlayback", path, notePlaybackState)) {
-                    Android.playSong(path); }
-            } catch(e) {
-                jt.log("playSong exception: " + e);
-                mgrs.mp.playerFailure("Service crashed"); } },
-        playerFailure: function (err) {
-            jt.log("mp.playerFailure: " + err);
-            app.player.dispatch("mob", "handlePlayFailure",
-                                mperrstat, err); },
-        notePlaybackStatus: function (stat) {
-            var compstat = "";
-            jt.log("svc.mp.notePlaybackStatus stat: " + JSON.stringify(stat));
-            if(!cq.length) {  //no command in queue to connect this result to
-                return jt.log("svc.mp.notePlaybackStatus cq empty"); }
-            if(!stat.state) {  //indeterminate result, retry or give up
-                if(cq[0].retries > 0) {
-                    cq[0].retries -= 1;
-                    const waitms = (maxRetry - cq[0].retries) * 200;
-                    setTimeout(processNextCommand, waitms);
-                    return jt.log("svc.mp.notePlaybackStatus retrying..."); }
-                //not a failure if starting up on mobile and nothing playing yet
-                compstat = "expired"; }
-            if(sleepstat.cbf) {
-                sleepstat.cbf(sleepstat.cmd);
-                sleepstat.cbf = null; }
-            if(stat.state.startsWith("failed")) {
-                jt.log("svc.notePlaybackStatus " + stat.state);
-                return app.player.dispatch("mob", "handlePlayFailure",
-                                           mperrstat, stat.state); }
-            if(stat.path) {
-                stat.path = jt.dec(stat.path);    //undo URI encode
-                stat.path = jt.dec(stat.path);    //undo File encode
-                stat.path = stat.path.slice(7); } //remove "file://" prefix
-            app.player.dispatch("mob", "notePlaybackStatus", stat);
-            const np = app.player.song();
-            if(np && np.path === stat.path) {
-                stat.song = np;
-                Android.noteState("player", JSON.stringify(stat));
-                mgrs.loc.noteUpdatedState("deck"); }
-            commandCompleted(compstat || "finished"); }
+                const np = app.player.nowPlayingSong();
+                if(!np || np.path !== srd.npsi.path) {
+                    Android.playSong(srd.npsi.path); } //rest sent w/status
+            } catch(e) {  //shouldn't fail, log if it happens
+                jt.log("Android.playSong exception: " + e); }
+            setTimeout(function () {  //let play call go, then tick
+                //use the main messaging utility for call sequencing.
+                app.player.dispatch("uiu", "requestPlaybackStatus", "mp.play",
+                    function (status) {
+                        //leave npsi/qsi/qmode values until "queueset" received
+                        jt.log("playAndSendQueue status return " +
+                               JSON.stringify(status)); }); }, 50); }
+        function platPlaySongQueue (pwsid) {
+            cq = [];  //clear all previous pending transport/status requests
+            const song = app.pdat.songsDict()[srd.npsi.path];
+            song.lp = new Date().toISOString();
+            app.pdat.writeDigDat(pwsid, null, playAndSendQueue); }
+    return {
+        //player.plui pbco interface functions:
+        requestPlaybackStatus: function () {
+            app.scr.requestPlaybackStatus(platRequestPlaybackStatus); },
+        playSongQueue: function (pwsid, sq) {
+            srd.qmode = "updnpqsi";
+            srd.npsi = ssd(sq[0]);
+            srd.qsi = sq.slice(1).map((s) => ssd(s));
+            jt.log("svc.mp.playSongQueue " + pwsid + " " + srd.npsi.path);
+            app.scr.playSongQueue(platPlaySongQueue, pwsid, sq); },
+        pause: function () {
+            app.scr.pause(function () { queueCommand("pause"); }); },
+        resume: function () {
+            app.scr.resume(function () { queueCommand("resume"); }); },
+        seek: function (ms) {
+            app.scr.seek(function () { queueCommand("seek",
+                                                    String(ms)); }); },
+        //Android callback
+        notePlaybackStatus: function (status) {
+            if(status.state.startsWith("failed")) {
+                status.errmsg = status.state;
+                status.state = ""; }
+            if(status.qmode === "queueset") {
+                srd.qmode = "statonly";
+                srd.npsi = null;
+                srd.qsi = null; }
+            if(status.path) {
+                status.path = jt.dec(status.path);    //undo URI encode
+                status.path = jt.dec(status.path);    //undo File encode
+                status.path = status.path.slice(7); } //remove "file://" prefix
+            app.player.dispatch("uiu", "receivePlaybackStatus", status);
+            commandCompleted("finished"); },
+        //player initialization
+        beginTransportInterface: function () {
+            app.player.dispatch("uiu", "requestPlaybackStatus", "mp.start",
+                function (status) {
+                    if(status.path) {  //app init found this song playing
+                        const song = app.pdat.songsDict()[status.path];
+                        app.player.notifySongChanged(song, status.state); }
+                    else {  //not already playing
+                        jt.log("mp.beginTransport no playing song"); } }); }
     };  //end mgrs.mp returned functions
     }());
 
@@ -124,8 +119,7 @@ app.svc = (function () {
 
     //song database processing
     mgrs.sg = (function () {
-        var dbstatdiv = "topdlgdiv";
-        var apresloadcmd = "";
+        var dls = null;  //data load state
         function parseAudioSummary (dais) {
             dais = JSON.parse(dais);
             dais = dais.filter((d) =>  //title and playback path required
@@ -160,58 +154,40 @@ app.svc = (function () {
                 song.ti = dai.title;
                 song.ar = dai.artist;
                 song.ab = dai.album;
+                song.mddn = dai.discnum;
+                song.mdtn = dai.track;
                 song.genrejson = JSON.stringify(dai.genre);
                 app.top.dispatch("dbc", "verifySong", song);
                 if(!song.ar) {  //artist required for hub sync
                     setArtistFromPath(song); } }); }
     return {
         mediaReadComplete: function (err) {
-            var dbo; var dais;
-            if(err) {
-                return jt.out(dbstatdiv, "Music read failed: " + err); }
-            jt.out(dbstatdiv, "Fetching audio summary...");
-            if(!app.scr.stubbed("requestMediaRead", null,
-                                function (mrd) { dais = mrd; })) {
-                dais = Android.getAudioItemSummary(); }
-            jt.out(dbstatdiv, "Parsing audio summary...");
-            dais = parseAudioSummary(dais);  //filter and fill metadata
-            jt.out(dbstatdiv, "Merging Digger data...");
-            dbo = mgrs.loc.getDatabase();
-            Object.values(dbo.songs).forEach(function (s) {  //mark all deleted
+            if(err) { return dls.errf(500, err); }
+            dls.dais = Android.getAudioItemSummary();
+            dls.dais = parseAudioSummary(dls.dais);
+            Object.values(dls.dbo.songs).forEach(function (s) {
                 s.fq = s.fq || "N";
                 if(!s.fq.startsWith("D")) {
-                    s.fq = "D" + s.fq; } });
-            dbo.songcount = dais.length;
-            updateDataFromDroidAudio(dbo, dais);  //set ti/ar/ab
-            jt.out("countspan", String(dbo.songcount) + "&nbsp;songs");
-            mgrs.loc.writeSongs();
-            jt.out(dbstatdiv, "");
-            app.top.markIgnoreSongs();
-            app.top.rebuildKeywords();
-            app.deck.songDataChanged("rebuildSongData");
-            if(apresloadcmd === "rebuild") {
-                app.player.next(); } },
-        loadLibrary: function (procdivid, apresload) {
-            dbstatdiv = procdivid || "topdlgdiv";
-            apresloadcmd = apresload || "";
-            jt.out(dbstatdiv, "Reading music...");
-            if(!app.scr.stubbed("requestMediaRead", null,
-                                function () {
-                                    app.svc.mediaReadComplete(); })) {
-                Android.requestMediaRead(); } },
-        verifyDatabase: function (dbo) {
-            var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
-            dbo.version = Android.getAppVersion();  //maybe diff since last run
-            if(stat.verified) { return dbo; }
-            jt.log("svc.db.verifyDatabase re-initializing dbo, received " +
-                   JSON.stringify(stat));
-            dbo = {version:Android.getAppVersion(),
-                   scanned:"",  //ISO latest walk of song files
-                   songcount:0,
-                   //songs are indexed by relative path off of musicPath e.g.
-                   //"artistFolder/albumFolder/disc#?/songFile"
-                   songs:{}};
-            return dbo; }
+                    s.fq = "D" + s.fq; } });  //mark all songs deleted
+            dls.dbo.scanned = new Date().toISOString();
+            dls.dbo.songcount = dls.dais.length;
+            updateDataFromDroidAudio(dls.dbo, dls.dais);  //set ti/ar/ab etc
+            mgrs.sg.writeDigDat(dls.dbo, null, dls.contf); },
+        readDigDat: function (contfunc, errfunc) {
+            dls = {dbo:{}, contf:contfunc, errf:errfunc};
+            try {
+                const ret = Android.readDigDat();
+                if(ret) {
+                    dls.dbo = JSON.parse(ret); }
+            } catch(e) {
+                jt.log("svc.sg.readDigDat Android read error " + e); }
+            dls.dbo = dls.dbo || {};
+            dls.dbo.version = dls.dbo.version || Android.getAppVersion();
+            dls.dbo.songs = dls.dbo.songs || {};
+            Android.requestMediaRead(); },  //calls back to mediaReadComplete
+        writeDigDat: function (dbo, ignore/*optobj*/, contf/*, errf*/) {
+            Android.writeDigDat(JSON.stringify(dbo, null, 2));
+            setTimeout(function () { contf(dbo); }, 50); }
     };  //end mgrs.sg returned functions
     }());
 
@@ -257,96 +233,19 @@ app.svc = (function () {
 
     //Local manager handles local environment interaction
     mgrs.loc = (function () {
-        var config = null;
-        var dbo = null;
-        function setAndWriteConfig (cfg) {
-            config = cfg;
-            Android.writeConfig(JSON.stringify(config, null, 2)); }
     return {
-        getConfig: function () { return config; },
-        getDigDat: function () { return dbo; },
-        songs: function () { return mgrs.loc.getDigDat().songs; },
-        writeConfig: function (cfg, contf/*, errf*/) {
-            setAndWriteConfig(cfg);
-            setTimeout(function () { contf(config); }, 50); },
-        noteUpdatedAcctsInfo: function(acctsinfo) {
-            config.acctsinfo = acctsinfo; },
-        updateAccount: function (acctsinfo, contf/*, errf*/) {
-            config.acctsinfo = acctsinfo;
-            setAndWriteConfig(config);
-            setTimeout(function () { contf(config.acctsinfo); }, 50); },
-        getDatabase: function () { return dbo; },
-        loadDigDat: function (cbf) {
+        readConfig: function (contf/*, errf*/) {
+            var config = {};  //default empty config
             try {
-                dbo = JSON.parse(Android.readDigDat() || "{}");
-                dbo = mgrs.sg.verifyDatabase(dbo); }
-            catch(e) {
-                return jt.err("loadDigDat failed: " + e); }
-            cbf(dbo); },
-        fetchSongs: function (contf/*, errf*/) {  //call stack as if web call
-            setTimeout(function () { contf(dbo.songs); }, 50); },
-        fetchAlbum: function (song, contf/*, errf*/) {
-            var lsi = song.path.lastIndexOf("/");  //last separator index
-            const pp = song.path.slice(0, lsi + 1);  //path prefix
-            const abs = Object.values(dbo.songs)  //album songs
-            //simple ab match won't work (e.g. "Greatest Hits").  ab + ar fails
-            //if the artist name varies (e.g. "main artist featuring whoever").
-                .filter((s) => s.path.startsWith(pp))
-                .sort(function (a, b) {  //assuming filename start with track#
-                    return a.path.localeCompare(b.path); });
-            contf(song, abs); },
-        writeSongs: function () {
-            var stat = app.top.dispatch("dbc", "verifyDatabase", dbo);
-            if(!stat.verified) {
-                return jt.err("Not writing bad data " + JSON.stringify(stat)); }
-            Android.writeDigDat(JSON.stringify(dbo, null, 2)); },
-        saveSongs: function (songs, contf/*, errf*/) {
-            var upds = [];
-            songs.forEach(function (song) {
-                app.copyUpdatedSongData(dbo.songs[song.path], song);
-                upds.push(dbo.songs[song.path]); });
-            mgrs.loc.writeSongs();
-            if(contf) {
-                contf(upds); } },
-        noteUpdatedState: function (label) {
-            if(label === "deck") {
-                Android.noteState("deck",
-                                  JSON.stringify(app.deck.getState(
-                                      mgrs.mp.getStateQueueMax()))); } },
-        restoreState: function (songs) {
-            if(!songs) {
-                jt.log("svc.restoreState initial check no songs"); }
-            else {
-                jt.log("svc.restoreState with " + Object.keys(songs).length +
-                       " songs"); }
-            const playstate = Android.getRestoreState("player");
-            if(playstate) {
-                jt.log("restoreState player: " + playstate);
-                app.player.setState(JSON.parse(playstate), songs); }
-            const deckstate = Android.getRestoreState("deck");
-            if(deckstate) {
-                jt.log("restoreState deck: " + deckstate);
-                app.deck.setState(JSON.parse(deckstate), songs); } },
-        loadInitialData: function () {
-            mgrs.loc.restoreState();  //remember previous state before reload
-            try {
-                if(!app.scr.stubbed("readConfig", null,
-                                    function (cd) { config = cd; })) {
-                    config = JSON.parse(Android.readConfig() || "{}"); }
-                if(!app.scr.stubbed("readDigDat", null,
-                                    function (dd) { dbo = dd; })) {
-                    dbo = JSON.parse(Android.readDigDat() || "{}"); }
+                config = Android.readConfig() || "{}";
+                config = JSON.parse(config);
             } catch(e) {
-                return jt.err("Initial data load failed: " + e); }
-            config = config || {};  //default account set up in top.js
-            dbo = mgrs.sg.verifyDatabase(dbo);
-            mgrs.loc.restoreState(dbo.songs);  //update saved state w/latest dbo
-            //let rest of app know data is ready, then check the library:
-            app.initialDataLoaded({"config":config, songdata:dbo});
-            if(!dbo.scanned) {
-                setTimeout(mgrs.sg.loadLibrary, 50); } },
-        loadLibrary: function (procdivid) {
-            mgrs.sg.loadLibrary(procdivid); },
+                jt.log("svc.loc.readConfig error " + e); }
+            contf(config); },
+        writeConfig: function (config, ignore/*optobj*/, contf/*, errf*/) {
+            Android.writeConfig(JSON.stringify(config, null, 2));
+            setTimeout(function () { contf(config); }, 50); },
+
         procSyncData: function (res) {  //hub.js processReceivedSyncData
             app.player.logCurrentlyPlaying("svc.loc.procSyncData");
             const updacc = res[0];
@@ -363,10 +262,6 @@ app.svc = (function () {
                                                       "receiving...");
                                      res = mgrs.loc.procSyncData(res);
                                      contf(res); }, errf); },
-        noteUpdatedSongData: function (updsong) {
-            //on Android the local database has already been updated, and
-            //local memory is up to date.
-            return dbo.songs[updsong.path]; },
         makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
             if(app.scr.stubbed("hubAcctCall" + endpoint, null, contf, errf)) {
                 return; }
@@ -378,26 +273,31 @@ app.svc = (function () {
 
     //general manager is main interface for app logic
     mgrs.gen = (function () {
-        var platconf = {
+        const platconf = {
             hdm: "loc",   //host data manager is local
             musicPath: "fixed",  //can't change where music files are
             dbPath: "fixed",  //rating info is only kept in app files for now
+            urlOpenSupp: "false",  //opening a tab break webview
+            defaultCollectionStyle: "",   //not permanentCollection
             audsrc: "Android",
             versioncode: Android.getVersionCode() };
     return {
+        initialize: function () {
+            app.boot.addApresModulesInitTask("initPLUI", function () {
+                app.player.dispatch("plui", "initInterface", mgrs.mp); });
+            app.pdat.addApresDataNotificationTask("startPLUI", function () {
+                mgrs.mp.beginTransportInterface(); });
+            app.pdat.svcModuleInitialized(); },
         plat: function (key) { return platconf[key]; },
-        noteUpdatedSongData: function (song) {
-            return mgrs.loc.noteUpdatedSongData(song); },
-        updateMultipleSongs: function (songs, contf, errf) {
-            return mgrs.loc.updateMultipleSongs(songs, contf, errf); },
-        initialize: function () {  //don't block init of rest of modules
-            setTimeout(mgrs.loc.loadInitialData, 50); },
         okToPlay: function (song) {
             //m4a files play as video, but MediaPlayer just crashes
             if(song.path.toLowerCase().endsWith(".m4a")) {
                 //jt.log("filtering out " + song.path);
                 return false; }
             return song; },
+        passthroughHubCall: function (dets) {
+            mgrs.hc.queueRequest(dets.endpoint, dets.url, dets.verb, dets.dat,
+                                 dets.contf, dets.errf); },
         docContent: function (docurl, contf) {
             var fn = jt.dec(docurl);
             var sidx = fn.lastIndexOf("/");
@@ -405,24 +305,6 @@ app.svc = (function () {
                 fn = fn.slice(sidx + 1); }
             const text = Android.getAssetContent("docs/" + fn);
             contf(text); },
-        makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
-            mgrs.loc.makeHubAcctCall(verb, endpoint, data, contf, errf); },
-        writeConfig: function (cfg, contf, errf) {
-            mgrs.loc.writeConfig(cfg, contf, errf); },
-        fanGroupAction: function (data, contf, errf) {
-            mgrs.hc.queueRequest("fangrpact", "/fangrpact", "POST", data,
-                                 //caller writes updated account data
-                                 contf, errf); },
-        fanCollab: function (data, contf, errf) {
-            mgrs.hc.queueRequest("fancollab", "/fancollab", "POST", data,
-                                 function (res) {
-                                     res = mgrs.loc.procSyncData(res);
-                                     contf(res); }, errf); },
-        fanMessage: function (data, contf, errf) {
-            if(app.scr.stubbed("hubAcctCallmessages", null, contf)) {
-                return; }
-            mgrs.hc.queueRequest("fanmsg", "/fanmsg", "POST", data,
-                                 contf, errf); },
         copyToClipboard: function (txt, contf, errf) {
             if(Android.copyToClipboard(txt)) {
                 return contf(); }
@@ -440,27 +322,21 @@ app.svc = (function () {
 return {
     init: function () { mgrs.gen.initialize(); },
     plat: function (key) { return mgrs.gen.plat(key); },
-    loadDigDat: function (cbf) { mgrs.loc.loadDigDat(cbf); },
-    songs: function () { return mgrs.loc.songs(); },
-    fetchSongs: function (cf, ef) { mgrs.loc.fetchSongs(cf, ef); },
-    fetchAlbum: function (s, cf, ef) { mgrs.loc.fetchAlbum(s, cf, ef); },
-    saveSongs: function (songs, cf, ef) { mgrs.loc.saveSongs(songs, cf, ef); },
-    noteUpdatedState: function (label) { mgrs.loc.noteUpdatedState(label); },
-    mediaReadComplete: function (err) { mgrs.sg.mediaReadComplete(err); },
-    playerFailure: function (err) { mgrs.mp.playerFailure(err); },
-    notePlaybackStatus: function (stat) { mgrs.mp.notePlaybackStatus(stat); },
-    okToPlay: function (song) { return mgrs.gen.okToPlay(song); },
-    hubReqRes: function (q, r, c, d) { mgrs.hc.hubResponse(q, r, c, d); },
-    urlOpenSupp: function () { return false; }, //links break webview
+    readConfig: function (contf, errf) {
+        app.scr.readConfig(mgrs.loc.readConfig, contf, errf); },
+    readDigDat: function (contf, errf) {
+        app.scr.readDigDat(mgrs.sg.readDigDat, contf, errf); },
+    writeConfig: mgrs.loc.writeConfig,
+    writeDigDat: mgrs.sg.writeDigDat,
+    playSongQueue: mgrs.mp.playSongQueue,
+    requestPlaybackStatus: mgrs.mp.requestPlaybackStatus,
+    notePlaybackStatus: mgrs.mp.notePlaybackStatus,   //Android callback
+    passthroughHubCall: mgrs.gen.passthroughHubCall,
+    copyToClipboard: mgrs.gen.copyToClipboard,
+    okToPlay: mgrs.gen.okToPlay,
+    mediaReadComplete: mgrs.sg.mediaReadComplete,     //Android callback
     docContent: function (du, cf) { mgrs.gen.docContent(du, cf); },
     topLibActionSupported: function (a) { return mgrs.gen.tlasupp(a); },
-    writeConfig: function (cfg, cf, ef) { mgrs.gen.writeConfig(cfg, cf, ef); },
-    dispatch: function (mgrname, fname, ...args) {
-        try {
-            return mgrs[mgrname][fname].apply(app.svc, args);
-        } catch(e) {
-            console.log("svc.dispatch: " + mgrname + "." + fname + " " + e +
-                        " " + new Error("stack trace").stack);
-        } }
+    extensionInterface: function (/*name*/) { return null; }
 };  //end of returned functions
 }());

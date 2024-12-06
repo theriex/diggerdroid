@@ -337,19 +337,59 @@ class DiggerAppInterface(private val context: MainActivity) {
 class DiggerAudioServiceInterface(private val context: MainActivity) {
     val lognm = "DiggerASI"
     val dcn = ComponentName(context, "com.diggerhub.digger.DiggerAudioService")
-    var svccn = dcn   //service connection name
+    var svccn = dcn     //service connection name
     var svcbinder: IBinder? = null
-    var command = ""
-    var param = ""
-    var reqnum = 0
-    var dur = 0
-    var pos = 0
-    var path = ""
+    var commok = false  //service connection call success flag
+    var command = ""    //pause/resume/seek/status
+    var param = ""      //optional parameter for command
+    var reqnum = 0      //the request number command was sent with
+    //returned status data values:
+    var sipbst = ""     //service interface playback state: playing/paused etc
+    var path = ""       //from das.playpath reconciled with dst.npsi
+    var dur = 0         //duration of currently playing song in millis
+    var pos = 0         //current playback position in millis
+    var qmode = ""      //from dst.qmode
+    var remqlen = 0     //length of dst.qsi entries
     var dbts = "1970-01-01T:00:00:00.00Z"
-    var sipbst = ""    //service interface playback state
-    var commok = false
 
     val connection = object : ServiceConnection {
+        fun unsetStatusDataValues() {
+            sipbst = ""
+            path = ""
+            dur = 0
+            pos = 0
+            path = ""
+            qmode = ""
+            remqlen = 0
+            dbts = "1970-01-01T:00:00:00.00Z"
+        }
+        fun updateStatusDataValues (mp:MediaPlayer, das:DiggerAudioService) {
+            //mp may be in an unreferenceable state if a new song has been
+            //selected to play and things are still setting up. In that case
+            //mp.isPlaying (and any subsequent access methods) will throw an
+            //IllegalStateException.  Revert to unset values if failure.
+            try {
+                if(sipbst.isEmpty()) {  //not set already so get from service
+                    if(das.pbstate == "ended") {
+                        sipbst = "ended" }
+                    else if(mp.isPlaying()) {
+                        sipbst = "playing" }
+                    else {
+                        sipbst = "paused" } }
+                path = das.playpath
+                dur = mp.getDuration()
+                pos = mp.getCurrentPosition()
+                if(das.dst != "") {
+                    val dso = JSONObject(das.dst)
+                    qmode = dso.optString("qmode", "qmodeunavailable")
+                    val qsi = dso.getJSONArray("qsi")
+                    remqlen = qsi.length() }
+                dbts = das.dbts
+            } catch(e: Exception) {
+                Log.d(lognm, "updateStatusDataValues state data unavailable")
+                unsetStatusDataValues()
+            }
+        }
         override fun onServiceConnected(name: ComponentName?,
                                         binder: IBinder?) {
             svccn = name ?: svccn
@@ -364,10 +404,8 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                 Log.d(lognm, "das.failmsg: " + das.failmsg)
                 sipbst = "failed " + das.failmsg }
             else if(das.mp == null || das.mpst.isEmpty()) {
-                //no player, or player not ready yet. caller retries
-                path = ""
-                dur = 0
-                pos = 0 }
+                //no player, or player not ready yet. caller retries...
+                unsetStatusDataValues() }
             else {  //have media player
                 try {
                     val mp = das.mp!!
@@ -384,17 +422,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                         "seek" -> mp.seekTo(param.toInt())
                         else -> {
                             Log.d(lognm, "unknown command " + command) } }
-                    path = das.playpath
-                    dur = mp.getDuration()
-                    pos = mp.getCurrentPosition()
-                    dbts = das.dbts
-                    if(sipbst.isEmpty()) {  //figure out sipbst from service
-                        if(das.pbstate == "ended") {
-                            sipbst = "ended" }
-                        else if(mp.isPlaying()) {
-                            sipbst = "playing" }
-                        else {
-                            sipbst = "paused" } }
+                    updateStatusDataValues(mp, das)
                 } catch(e: Exception) {
                     sipbst = ""  //return indeterminate if anything went wrong
                     Log.e(lognm, "ServiceConnection mp failure ", e)
@@ -442,7 +470,8 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
         commok = false  //reset indicator flag for next call
         val encpath = java.net.URLEncoder.encode(path, "utf-8")
         val statobj = ("{state:\"$sipbst\", pos:$pos, dur:$dur" +
-                       ", path:\"$encpath\", cc:$reqnum, dbts:\"$dbts\"}")
+                       ", path:\"$encpath\", cc:$reqnum, dbts:\"$dbts\"" +
+                       ", qmode:\"$qmode\", remqlen:$remqlen}")
         val callback = "app.svc.notePlaybackStatus($statobj)"
         Log.d(lognm, "callback: " + callback)
         context.runOnUiThread(Runnable() { context.djs(callback) })
@@ -535,7 +564,15 @@ class DiggerAudioService : Service(),
     //service has no app information about the song other than the URI.
     fun dasPlaySong(pathuri: Uri) {
         val context = getApplicationContext()
-        mp?.release()  //clean up any previously existing instance
+        Log.d(lognm, "dasPlaySong about to try dealing with existing mp");
+        mp?.let { existingMP ->     //clean up previously existing instance
+            //checking existingMP.isPlaying() throws.  state is indeterminate.
+            try {
+                existingMP.release()
+            } catch(e: Exception) {
+                //whatever.  leave it for garbage collection
+            } }
+        Log.d(lognm, "dasPlaySong continuing after mp cleanup");
         mp = MediaPlayer().apply {
             cts = System.currentTimeMillis()  //update UI communication time
             failmsg = ""  //clear any previous failure
@@ -560,6 +597,7 @@ class DiggerAudioService : Service(),
 
     fun popNextSongPathFromState() : String {
         val dso = JSONObject(dst)
+        dso.put("qmode", "nextplay")
         val qsi = dso.getJSONArray("qsi")
         Log.d(lognm, "popNextSongPathFromState qsi.length: " + qsi.length())
         if(qsi.length() == 0) {
@@ -619,17 +657,22 @@ class DiggerAudioService : Service(),
         return svcntf
     }
 
+    fun shorten(str:String, maxlen:Int) : String {
+        var res = str
+        if(str.length > maxlen - 3) {
+            res = str.substring(0, maxlen - 3) + "..." }
+        return res
+    }
+
     fun updateQueue(qstatstr: String) {
+        //Log.d(lognm, "updateQueue qstatstr: " + shorten(qstatstr, 400))
         val qstat = JSONObject(qstatstr)
-        val qdbt = qstat.optString("dbts", "1970-01-01T:00:00:00.00Z")
-        if(qdbt.compareTo(dbts) >= 0) {  //received dbts is same or newer
-            dbts = qdbt  //update local dbts with received value
-            dst = qstatstr
-            Log.d(lognm, "updateQueue dst updated, qdbt " + qdbt + " >= " +
-                             "dbts: " + dbts + ", qstatstr: " + qstatstr) }
-        else {  //stale data from outdated app interface coming back to life
-            Log.d(lognm, "updateQueue dst NOT updated, qdbt " + qdbt + " < " +
-                             "dbts: " + dbts + ", qstatstr: " + qstatstr) }
+        val qmode = qstat.optString("qmode", "statonly")
+        if(qmode == "updnpqsi") {
+            //qstat has updated npsi and qsi
+            qstat.put("qmode", "queueset")
+            dst = qstat.toString() }
+        //Log.d(lognm, "updateQueue dst: " + shorten(dst, 400))
     }
 
     //Seems flailing to update the notice text every few seconds, but the
@@ -680,6 +723,13 @@ class DiggerAudioService : Service(),
         if(intent != null) {
             val pathuri = intent.data!!  //force Uri? to Uri
             Log.d(lognm, "onStartCommand pathuri: " + pathuri)
+            if(dst != "") {
+                val dso = JSONObject(dst)
+                if(dso.has("npsi")) {
+                    val npsi = dso.getJSONObject("npsi")
+                    if(npsi.getString("path") == pathuri.toString()) {
+                        Log.d(lognm, "Already playing " + pathuri)
+                        return Service.START_STICKY } } }
             dasPlaySong(pathuri) }
         else {  //null, service restarted after having been killed
             Log.d(lognm, "onStartCommand null intent (restart)") }
@@ -724,20 +774,17 @@ class DiggerAudioService : Service(),
         if(!dst.isEmpty()) {  //have state info, start autoplay
             Log.d(lognm, "onCompletion autoplay " + isostamp())
             val path = popNextSongPathFromState()
-            if(path == "DIGGERSLEEPMARKER") {
-                Log.i(lognm, "Ending at DIGGERSLEEPMARKER")
-                pbstate = "ended" }
-            else if(!path.isEmpty()) {  //have next song to play
+            if(!path.isEmpty()) {  //have next song to play
                 if(noteSongPlayed(path)) {
                     dasPlaySong(Uri.fromFile(File(path))) }
                 else {
                     Log.d(lognm, "onCompletion retrying noteSongPlayed failure")
                     onCompletion(ignore) } }
             else {
-                Log.i(lognm, "No path for next song, ending.")
+                Log.i(lognm, "onCompleteion no path for next song, ending.")
                 pbstate = "ended" } }
         else {
-            Log.i(lognm, "No deck state, ending.")
+            Log.i(lognm, "onCompletion no deck state, ending.")
             pbstate = "ended" }
         verifyNotice()
     }
