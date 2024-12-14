@@ -45,6 +45,7 @@ app.svc = (function () {
         function platRequestPlaybackStatus () {
             queueCommand("status", JSON.stringify(srd)); }
         function playAndSendQueue () {
+            jt.log("playAndSendQueue " + srd.npsi.path);
             try {
                 const np = app.player.nowPlayingSong();
                 if(!np || np.path !== srd.npsi.path) {
@@ -62,7 +63,10 @@ app.svc = (function () {
             cq = [];  //clear all previous pending transport/status requests
             const song = app.pdat.songsDict()[srd.npsi.path];
             song.lp = new Date().toISOString();
-            app.pdat.writeDigDat(pwsid, null, playAndSendQueue); }
+            //play first, then write digdat, otherwise digdat listeners will
+            //be reacting to non-existent ongoing playback.
+            playAndSendQueue();
+            app.pdat.writeDigDat(pwsid); }
     return {
         //player.plui pbco interface functions:
         requestPlaybackStatus: function () {
