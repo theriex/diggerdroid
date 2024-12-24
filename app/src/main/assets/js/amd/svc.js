@@ -185,8 +185,7 @@ app.svc = (function () {
                     dls.dbo = JSON.parse(ret); }
             } catch(e) {
                 jt.log("svc.sg.readDigDat Android read error " + e); }
-            dls.dbo = dls.dbo || {};
-            dls.dbo.version = dls.dbo.version || Android.getAppVersion();
+            dls.dbo.version = Android.getAppVersion();
             dls.dbo.songs = dls.dbo.songs || {};
             Android.requestMediaRead(); },  //calls back to mediaReadComplete
         writeDigDat: function (dbo, ignore/*optobj*/, contf/*, errf*/) {
@@ -226,7 +225,11 @@ app.svc = (function () {
                               reqnum + " (" + rqs[qname][0].rn + " expected" +
                               ") code: " + code + ", det: " + det); }
             const entry = rqs[qname].shift();
-            if(!rqs[qname].length) { delete rqs[qname]; }
+            if(!rqs[qname].length) {   //processed last entry
+                delete rqs[qname]; }   //so clear the queue
+            else {  //process next entry after finishing callback for this one
+                setTimeout(function () {
+                    startRequest(rqs[qname][0]); }, 50); }
             if(code === 200) {
                 entry.cf(JSON.parse(det)); }
             else {
@@ -248,29 +251,7 @@ app.svc = (function () {
             contf(config); },
         writeConfig: function (config, ignore/*optobj*/, contf/*, errf*/) {
             Android.writeConfig(JSON.stringify(config, null, 2));
-            setTimeout(function () { contf(config); }, 50); },
-
-        procSyncData: function (res) {  //hub.js processReceivedSyncData
-            app.player.logCurrentlyPlaying("svc.loc.procSyncData");
-            const updacc = res[0];
-            updacc.diggerVersion = Android.getAppVersion();
-            app.deck.dispatch("hsu", "noteSynchronizedAccount", updacc);
-            app.deck.dispatch("hsu", "updateSynchronizedSongs", res.slice(1));
-            return res; },
-        hubSyncDat: function (data, contf, errf) {
-            if(app.scr.stubbed("hubsync", null, contf, errf)) {
-                return; }
-            mgrs.hc.queueRequest("hubSyncDat", "/hubsync", "POST", data,
-                                 function (res) {
-                                     app.top.dispatch("srs", "hubStatInfo",
-                                                      "receiving...");
-                                     res = mgrs.loc.procSyncData(res);
-                                     contf(res); }, errf); },
-        makeHubAcctCall: function (verb, endpoint, data, contf, errf) {
-            if(app.scr.stubbed("hubAcctCall" + endpoint, null, contf, errf)) {
-                return; }
-            mgrs.hc.queueRequest(endpoint, "/" + endpoint, verb, data,
-                                 contf, errf); }
+            setTimeout(function () { contf(config); }, 50); }
     };  //end mgrs.loc returned functions
     }());
 
