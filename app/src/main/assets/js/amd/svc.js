@@ -59,7 +59,11 @@ app.svc = (function () {
                         //leave npsi/qsi/qmode values until "queueset" received
                         jt.log("playAndSendQueue status return " +
                                JSON.stringify(status)); }); }, 50); }
-        function platPlaySongQueue (pwsid) {
+        function platPlaySongQueue (pwsid, sq) {
+            srd.qmode = "updnpqsi";
+            srd.npsi = ssd(sq[0]);
+            srd.qsi = sq.slice(1).map((s) => ssd(s));
+            jt.log("svc.mp.playSongQueue " + pwsid + " " + srd.npsi.path);
             cq = [];  //clear all previous pending transport/status requests
             const song = app.pdat.songsDict()[srd.npsi.path];
             song.lp = new Date().toISOString();
@@ -69,21 +73,11 @@ app.svc = (function () {
             app.pdat.writeDigDat(pwsid); }
     return {
         //player.plui pbco interface functions:
-        requestPlaybackStatus: function () {
-            app.scr.requestPlaybackStatus(platRequestPlaybackStatus); },
-        playSongQueue: function (pwsid, sq) {
-            srd.qmode = "updnpqsi";
-            srd.npsi = ssd(sq[0]);
-            srd.qsi = sq.slice(1).map((s) => ssd(s));
-            jt.log("svc.mp.playSongQueue " + pwsid + " " + srd.npsi.path);
-            app.scr.playSongQueue(platPlaySongQueue, pwsid, sq); },
-        pause: function () {
-            app.scr.pause(function () { queueCommand("pause"); }); },
-        resume: function () {
-            app.scr.resume(function () { queueCommand("resume"); }); },
-        seek: function (ms) {
-            app.scr.seek(function () { queueCommand("seek",
-                                                    String(ms)); }); },
+        requestPlaybackStatus: platRequestPlaybackStatus,
+        playSongQueue: platPlaySongQueue,
+        pause: function () { queueCommand("pause"); },
+        resume: function () { queueCommand("resume"); },
+        seek: function (ms) { queueCommand("seek", String(ms)); },
         //Android callback
         notePlaybackStatus: function (status) {
             if(status.state.startsWith("failed")) {
@@ -307,10 +301,8 @@ app.svc = (function () {
 return {
     init: function () { mgrs.gen.initialize(); },
     plat: function (key) { return mgrs.gen.plat(key); },
-    readConfig: function (contf, errf) {
-        app.scr.readConfig(mgrs.loc.readConfig, contf, errf); },
-    readDigDat: function (contf, errf) {
-        app.scr.readDigDat(mgrs.sg.readDigDat, contf, errf); },
+    readConfig: mgrs.loc.readConfig,
+    readDigDat: mgrs.sg.readDigDat,
     writeConfig: mgrs.loc.writeConfig,
     writeDigDat: mgrs.sg.writeDigDat,
     playSongQueue: mgrs.mp.playSongQueue,
