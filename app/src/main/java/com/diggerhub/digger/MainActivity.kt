@@ -295,13 +295,13 @@ class DiggerAppInterface(private val context: MainActivity) {
     }
     @JavascriptInterface
     fun hubRequest(qname: String, reqnum: Int,
-                   endpoint: String, verb: String, data: String) {
+                   endpoint: String, verb: String, dat: String) {
         try {
             val callinfo = HubWebRequest(context, qname, reqnum,
-                                         endpoint, verb, data)
+                                         endpoint, verb, dat)
             context.execsvc.execute(callinfo)
         } catch(e: Exception) {
-            Log.e(lognm, "Web request failed", e)
+            Log.e(lognm, "HubWebRequest execution failed", e)
         }
     }
     @JavascriptInterface
@@ -802,14 +802,14 @@ class HubWebRequest(private val context: MainActivity,
                     private val reqnum: Int,
                     private val endpoint: String,
                     private val verb: String,
-                    private val data: String) : Runnable {
+                    private val dat: String) : Runnable {
     override fun run() {
-        val lognm = "DiggerHub"
+        val lognm = "DiggerHubCall"
         val dhup = "https://diggerhub.com/api"
         var code = 503  //Service Unavailable
         var res = "Connection failed"
         try {
-            Log.d(lognm, "$qname $reqnum $verb /api$endpoint $data")
+            Log.d(lognm, "$qname $reqnum $verb /api$endpoint $dat")
             val url = URL(dhup + endpoint)
             (url.openConnection() as? HttpURLConnection)?.run {
                 setRequestProperty("Content-Type",
@@ -819,7 +819,7 @@ class HubWebRequest(private val context: MainActivity,
                 setReadTimeout(20 * 1000)
                 if(verb == "POST") {
                     setDoOutput(true)
-                    getOutputStream().write(data.toByteArray()) }
+                    getOutputStream().write(dat.toByteArray()) }
                 connect()  //ignored if POST already connected
                 code = getResponseCode()
                 if(code == 200) {

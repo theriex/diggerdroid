@@ -189,49 +189,6 @@ app.svc = (function () {
     }());
 
 
-    //hub communications manager handles async hub requests/callbacks
-    mgrs.hc = (function () {
-        var rqs = {};  //request queues by queue name
-        var reqnum = 1;
-        function startRequest (entry) {
-            entry.dat = entry.dat || "";
-            jt.log("mgrs.hc " + JSON.stringify(entry));
-            Android.hubRequest(entry.qn, entry.rn,
-                               entry.ep, entry.v, entry.dat);
-        }
-    return {
-        queueRequest: function (qname, endpoint, verb, data, contf, errf) {
-            contf = contf || function (res) {
-                jt.log("svc.hc.queueRequest contf " + JSON.stringify(res)); };
-            errf = errf || function (code, text) {
-                jt.log("svc.hc.queueRequest errf " + code + ": " + text); };
-            const entry = {qn:qname, ep:endpoint, v:verb, dat:data,
-                           cf:contf, ef:errf, rn:reqnum};
-            reqnum += 1;
-            if(rqs[qname]) {  //existing request(s) pending
-                rqs[qname].push(entry); }  //process in turn
-            else {  //queueing a new request
-                rqs[qname] = [entry];
-                startRequest(entry); } },
-        hubResponse: function (qname, reqnum, code, det) {
-            if(reqnum !== rqs[qname][0].rn) {
-                return jt.log("ignoring bad request return " + qname + " " +
-                              reqnum + " (" + rqs[qname][0].rn + " expected" +
-                              ") code: " + code + ", det: " + det); }
-            const entry = rqs[qname].shift();
-            if(!rqs[qname].length) {   //processed last entry
-                delete rqs[qname]; }   //so clear the queue
-            else {  //process next entry after finishing callback for this one
-                setTimeout(function () {
-                    startRequest(rqs[qname][0]); }, 50); }
-            if(code === 200) {
-                entry.cf(JSON.parse(det)); }
-            else {
-                entry.ef(code, det); } }
-    };  //end mgrs.hc returned functions
-    }());
-
-
     //Local manager handles local environment interaction
     mgrs.loc = (function () {
     return {
@@ -256,7 +213,7 @@ app.svc = (function () {
             hdm: "loc",   //host data manager is local
             musicPath: "fixed",  //can't change where music files are
             dbPath: "fixed",  //rating info is only kept in app files for now
-            urlOpenSupp: "false",  //opening a tab break webview
+            urlOpenSupp: false,  //opening a tab breaks webview
             defaultCollectionStyle: "",   //not permanentCollection
             audsrc: "Android",
             versioncode: Android.getVersionCode() };
@@ -274,9 +231,10 @@ app.svc = (function () {
                 //jt.log("filtering out " + song.path);
                 return false; }
             return song; },
-        passthroughHubCall: function (dets) {
-            mgrs.hc.queueRequest(dets.endpoint, dets.url, dets.verb, dets.dat,
-                                 dets.contf, dets.errf); },
+        passthroughHubCall: function (qname, reqnum, endpoint, verb, dat) {
+            Android.hubRequest(qname, reqnum, endpoint, verb, dat); },
+        hubResponse: function (qname, reqnum, code, det) {
+            app.top.dispatch("hcq", "hubResponse", qname, reqnum, code, det); },
         docContent: function (docurl, contf) {
             var fn = jt.dec(docurl);
             var sidx = fn.lastIndexOf("/");
@@ -309,6 +267,7 @@ return {
     requestPlaybackStatus: mgrs.mp.requestPlaybackStatus,
     notePlaybackStatus: mgrs.mp.notePlaybackStatus,   //Android callback
     passthroughHubCall: mgrs.gen.passthroughHubCall,
+    hubReqRes:mgrs.gen.hubResponse,                   //Android callback
     copyToClipboard: mgrs.gen.copyToClipboard,
     okToPlay: mgrs.gen.okToPlay,
     mediaReadComplete: mgrs.sg.mediaReadComplete,     //Android callback
