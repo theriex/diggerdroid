@@ -43,6 +43,10 @@ app.svc = (function () {
         function ssd (song) {  //simplified song details
             return {ti:song.ti, ar:song.ar, path:song.path}; }
         function platRequestPlaybackStatus () {
+            if(srd.qmode === "updnpqsi") {  //avoid log clutter
+                jt.log("platRequestPlaybackStatus qmode:" + srd.qmode +
+                       " np:" + (srd.npsi? srd.npsi.path : "-") +
+                       " qsi.length:" + (srd.qsi? srd.qsi.length : "-")); }
             queueCommand("status", JSON.stringify(srd)); }
         function playAndSendQueue () {
             jt.log("playAndSendQueue " + srd.npsi.path);
@@ -63,10 +67,15 @@ app.svc = (function () {
             srd.qmode = "updnpqsi";
             srd.npsi = ssd(sq[0]);
             srd.qsi = sq.slice(1).map((s) => ssd(s));
-            jt.log("svc.mp.playSongQueue " + pwsid + " " + srd.npsi.path);
+            jt.log("svc.mp.playSongQueue " + pwsid + " " + srd.npsi.path +
+                   " srd.qsi.length: " + srd.qsi.length +
+                   ", srd.qmode: " + srd.qmode);
             cq = [];  //clear all previous pending transport/status requests
             const song = app.pdat.songsDict()[srd.npsi.path];
             song.lp = new Date().toISOString();
+            song.pc = song.pc || 0;
+            song.pc += 1;
+            song.pd = "played";
             //play first, then write digdat, otherwise digdat listeners will
             //be reacting to non-existent ongoing playback.
             playAndSendQueue();
@@ -84,6 +93,8 @@ app.svc = (function () {
                 status.errmsg = status.state;
                 status.state = ""; }
             if(status.qmode === "queueset") {
+                if(srd.qmode === "updnpqsi") {  //avoid log clutter
+                    jt.log("svc.mp.notePlaybackStatus qmode->statonly"); }
                 srd.qmode = "statonly";
                 srd.npsi = null;
                 srd.qsi = null; }

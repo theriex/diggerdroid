@@ -625,6 +625,7 @@ class DiggerAudioService : Service(),
             val song = songs.getJSONObject(path)
             val pc = song.optInt("pc", 0)
             song.put("pc", pc + 1)
+            song.put("pd", "digaudpl")
             dbts = isostamp()  //note database update time for app UI sync
             song.put("lp", dbts)
             Log.d(lognm, "    lp: " + song["lp"])
