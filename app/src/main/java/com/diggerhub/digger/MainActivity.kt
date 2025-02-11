@@ -782,7 +782,7 @@ class DiggerAudioService : Service(),
                     Log.d(lognm, "onCompletion retrying noteSongPlayed failure")
                     onCompletion(ignore) } }
             else {
-                Log.i(lognm, "onCompleteion no path for next song, ending.")
+                Log.i(lognm, "onCompletion no path for next song, ending.")
                 pbstate = "ended" } }
         else {
             Log.i(lognm, "onCompletion no deck state, ending.")
