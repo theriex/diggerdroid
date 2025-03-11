@@ -809,16 +809,19 @@ class HubWebRequest(private val context: MainActivity,
         val dhup = "https://diggerhub.com/api"
         var code = 503  //Service Unavailable
         var res = "Connection failed"
+        var httpverb = verb
+        if(verb.startsWith("raw")) {
+            httpverb = verb.removePrefix("raw") }
         try {
-            Log.d(lognm, "$qname $reqnum $verb /api$endpoint $dat")
+            Log.d(lognm, "$qname $reqnum $httpverb /api$endpoint $dat")
             val url = URL(dhup + endpoint)
             (url.openConnection() as? HttpURLConnection)?.run {
                 setRequestProperty("Content-Type",
                                    "application/x-www-form-urlencoded")
-                setRequestMethod(verb)
+                setRequestMethod(httpverb)
                 setConnectTimeout(6 * 1000)
                 setReadTimeout(20 * 1000)
-                if(verb == "POST") {
+                if(httpverb == "POST") {
                     setDoOutput(true)
                     getOutputStream().write(dat.toByteArray()) }
                 connect()  //ignored if POST already connected
@@ -836,6 +839,11 @@ class HubWebRequest(private val context: MainActivity,
         }
         res = res.replace("\\", "\\\\")  //escape contained backslashes
         res = res.replace("\"", "\\\"")  //escape contained quotes
+        if(verb.startsWith("raw")) {  //need to "JSON.stringify" result
+            res = res.replace("\n", "\\n")   //let newlines through as newlines
+            res = res.replace("\\", "\\\\")  //dbl escape contained backslashes
+            res = res.replace("\"", "\\\"")  //dbl escape contained quotes
+            res = "\\\"" + res + "\\\"" }    //quote result as a single string
         val cb = "app.svc.hubReqRes(\"$qname\",$reqnum,$code,\"$res\")"
         Log.d(lognm, cb)
         context.runOnUiThread(Runnable() { context.djs(cb) })
