@@ -71,11 +71,7 @@ app.svc = (function () {
                    " srd.qsi.length: " + srd.qsi.length +
                    ", srd.qmode: " + srd.qmode);
             cq = [];  //clear all previous pending transport/status requests
-            const song = app.pdat.songsDict()[srd.npsi.path];
-            song.lp = new Date().toISOString();
-            song.pc = song.pc || 0;
-            song.pc += 1;
-            song.pd = "played";
+            app.util.updateSongLpPcPd(srd.npsi.path);
             //play first, then write digdat, otherwise digdat listeners will
             //be reacting to non-existent ongoing playback.
             playAndSendQueue();
