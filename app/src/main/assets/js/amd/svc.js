@@ -15,6 +15,7 @@ app.svc = (function () {
             qsi:null};         //queued songs info (remaining song info array)
         var rqn = 0;
         var cq = [];
+        var mrstat = null;
         const maxRetry = 3;
         function processNextCommand () {
             if(!cq || !cq.length) { return; }  //queue previously cleared
@@ -49,10 +50,15 @@ app.svc = (function () {
                        " qsi.length:" + (srd.qsi? srd.qsi.length : "-")); }
             queueCommand("status", JSON.stringify(srd)); }
         function playAndSendQueue () {
-            jt.log("playAndSendQueue " + srd.npsi.path);
+            const logpre = "svc.mp.playAndSendQueue "
+            jt.log(logpre + srd.npsi.path);
             try {
-                const np = app.player.nowPlayingSong();
-                if(!np || np.path !== srd.npsi.path) {
+                //If the song is already playing, don't restart it.  Need
+                //to test actually playing, not just loaded into player UI.
+                if(mrstat && srd.npsi && mrstat.path === srd.npsi.path &&
+                   mrstat.state === "playing") {
+                    jt.log(logpre + "song already playing, not restarted"); }
+                else {
                     Android.playSong(srd.npsi.path); } //rest sent w/status
             } catch(e) {  //shouldn't fail, log if it happens
                 jt.log("Android.playSong exception: " + e); }
@@ -61,7 +67,7 @@ app.svc = (function () {
                 app.player.dispatch("uiu", "requestPlaybackStatus", "mp.play",
                     function (status) {
                         //leave npsi/qsi/qmode values until "queueset" received
-                        jt.log("playAndSendQueue status return " +
+                        jt.log(logpre + "status return " +
                                JSON.stringify(status)); }); }, 50); }
         function platPlaySongQueue (pwsid, sq) {
             srd.qmode = "updnpqsi";
@@ -98,6 +104,7 @@ app.svc = (function () {
                 status.path = jt.dec(status.path);    //undo URI encode
                 status.path = jt.dec(status.path);    //undo File encode
                 status.path = status.path.slice(7); } //remove "file://" prefix
+            mrstat = status;
             app.player.dispatch("uiu", "receivePlaybackStatus", status);
             commandCompleted("finished"); },
         //player initialization
