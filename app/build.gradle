@@ -10,8 +10,8 @@ android {
         applicationId "com.diggerhub.digger"
         minSdk 33
         targetSdk 34
-        versionCode 50
-        versionName "1.4.7"
+        versionCode 51
+        versionName "1.4.8"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
