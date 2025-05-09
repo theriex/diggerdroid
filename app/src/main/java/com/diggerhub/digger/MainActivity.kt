@@ -296,6 +296,7 @@ class DiggerAppInterface(private val context: MainActivity) {
     @JavascriptInterface
     fun hubRequest(qname: String, reqnum: Int,
                    endpoint: String, verb: String, dat: String) {
+        Log.d(lognm, "hubRequest " + verb + " " + endpoint)
         try {
             val callinfo = HubWebRequest(context, qname, reqnum,
                                          endpoint, verb, dat)
