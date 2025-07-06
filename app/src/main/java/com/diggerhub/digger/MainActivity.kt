@@ -26,12 +26,16 @@ import android.support.v4.media.MediaBrowserCompat.MediaItem
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
+import android.view.ViewGroup
 import android.webkit.*
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.media.session.MediaButtonReceiver
 import androidx.webkit.WebViewAssetLoader
 import com.diggerhub.digger.BuildConfig
@@ -85,6 +89,18 @@ class MainActivity : AppCompatActivity() {
                             WebViewAssetLoader.AssetsPathHandler(this))
             .build()
         val dwv: WebView = findViewById(R.id.webview)
+        ViewCompat.setOnApplyWindowInsetsListener(dwv) { v, insets ->
+            Log.d(lognm, "inset listener updating padding...")
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars()
+                or WindowInsetsCompat.Type.displayCutout())
+            Log.d(lognm, "window inset bars top:${bars.top}, " +
+                             "left:${bars.left}, bottom:${bars.bottom}, " +
+                             "right:${bars.right}")
+            //The logged inset values are in dp not px, and no conversion.
+            //v.updatePadding doesn't work, and rather have the app background
+            //fill the space, so inset spacing is handled in the js app.
+            WindowInsetsCompat.CONSUMED }
         dwv.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView,

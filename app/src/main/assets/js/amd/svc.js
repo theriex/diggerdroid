@@ -230,6 +230,7 @@ app.svc = (function () {
             urlOpenSupp: false,  //opening a tab breaks webview
             defaultCollectionStyle: "",   //not permanentCollection
             audsrc: "Android",
+            topInset: 44,  //px value. Need at least 30.
             versioncode: Android.getVersionCode() };
     return {
         initialize: function () {
