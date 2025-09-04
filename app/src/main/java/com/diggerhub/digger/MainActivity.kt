@@ -368,6 +368,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
     var qmode = ""      //from dst.qmode
     var remqlen = 0     //length of dst.qsi entries
     var dbts = "1970-01-01T:00:00:00.00Z"
+    var ctra = ""       //connection trace log info
 
     val connection = object : ServiceConnection {
         fun unsetStatusDataValues() {
@@ -379,6 +380,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
             qmode = ""
             remqlen = 0
             dbts = "1970-01-01T:00:00:00.00Z"
+            ctra = ""
         }
         fun updateStatusDataValues (mp:MediaPlayer, das:DiggerAudioService) {
             //mp may be in an unreferenceable state if a new song has been
@@ -405,6 +407,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
             } catch(e: Exception) {
                 Log.d(lognm, "updateStatusDataValues state data unavailable")
                 unsetStatusDataValues()
+                ctra = "$ctra;state data unavailable"
             }
         }
         override fun onServiceConnected(name: ComponentName?,
@@ -422,7 +425,8 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                 sipbst = "failed " + das.failmsg }
             else if(das.mp == null || das.mpst.isEmpty()) {
                 //no player, or player not ready yet. caller retries...
-                unsetStatusDataValues() }
+                unsetStatusDataValues()
+                ctra = "$ctra;no ready player" }
             else {  //have media player
                 try {
                     val mp = das.mp!!
@@ -442,6 +446,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                     updateStatusDataValues(mp, das)
                 } catch(e: Exception) {
                     sipbst = ""  //return indeterminate if anything went wrong
+                    ctra = "$ctra;mp call failure"
                     Log.e(lognm, "ServiceConnection mp failure ", e)
                 } }
         }  //end onServiceConnected
@@ -465,12 +470,15 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
         command = svccommand
         param = svcparam
         reqnum = callnum
+        ctra = ""
         if(context.uivs != "visible") {
             sipbst = "failed: MainActivity " + context.uivs }
         else {  //UI is visible
             if(svcbinder != null) {
+                ctra = "direct call"
                 connection.onServiceConnected(svccn, svcbinder) }
             else {
+                ctra = "binding"
                 val exi = Intent("com.diggerhub.digger.DiggerAudioService")
                 exi.setComponent(dcn)
                 //BIND_IMPORTANT, BIND_NOT_FOREGROUND, BIND_WAIVE_PRIORITY
@@ -478,9 +486,11 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
                 val bindok = context.bindService(exi, connection, flags)
                 if(!bindok) {
                     Log.d(lognm, "could not bind to service")
+                    ctra = "bind failure"
                     context.unbindService(connection)  //unbind just in case
                     sipbst = ""; } }
             if(!commok) {
+                ctra = "$ctra;bind connection failure"
                 decoupleService()
                 //Log.d(lognm, "binding service did not connect")
                 sipbst = ""; } }
@@ -488,7 +498,7 @@ class DiggerAudioServiceInterface(private val context: MainActivity) {
         val encpath = java.net.URLEncoder.encode(path, "utf-8")
         val statobj = ("{state:\"$sipbst\", pos:$pos, dur:$dur" +
                        ", path:\"$encpath\", cc:$reqnum, dbts:\"$dbts\"" +
-                       ", qmode:\"$qmode\", remqlen:$remqlen}")
+                       ", qmode:\"$qmode\", remqlen:$remqlen, ctra:\"$ctra\"}")
         val callback = "app.svc.notePlaybackStatus($statobj)"
         Log.d(lognm, "callback: " + callback)
         context.runOnUiThread(Runnable() { context.djs(callback) })
