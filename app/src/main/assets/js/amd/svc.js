@@ -146,6 +146,7 @@ app.svc = (function () {
                     dai.path = dai.relpath + dai.dispname; } });
             return dais; }
         function setArtistFromPath (song) {
+            jt.log("setArtistFromPath " + song.path);
             const pes = song.path.split("/");
             song.ti = pes[pes.length - 1];
             if(pes.length >= 3) {
