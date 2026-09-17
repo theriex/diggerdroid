@@ -540,7 +540,7 @@ class DiggerAudioService : Service(),
                     MediaPlayer.OnCompletionListener {
     val lognm = "DiggerAudioService"
     val svcNoticeId = 1   //1 is used in most if not all sample code
-    val defaultNoticeText = "Playing your matching songs."
+    val defaultNoticeText = "Playing your music library."
     var mp: MediaPlayer? = null
     var mpst = ""  //partial state info.  not safe to call if empty
     lateinit var mse: MediaSessionCompat  //session has same lifespan as service
