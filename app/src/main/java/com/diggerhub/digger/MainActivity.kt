@@ -286,6 +286,14 @@ class DiggerAppInterface(private val context: MainActivity) {
         writeFile(File(context.filesDir, "digdat.json"), dbjson)
     }
     @JavascriptInterface
+    fun platReadFile(fnm: String) : String {
+        return readFile(File(context.filesDir, fnm))
+    }
+    @JavascriptInterface
+    fun platWriteFile(fnm: String, txt: String) {
+        return writeFile(File(context.filesDir, fnm), txt)
+    }
+    @JavascriptInterface
     fun requestMediaRead()  {
         context.requestMediaRead()
     }

@@ -50,7 +50,7 @@ app.svc = (function () {
                        " qsi.length:" + (srd.qsi? srd.qsi.length : "-")); }
             queueCommand("status", JSON.stringify(srd)); }
         function playAndSendQueue () {
-            const logpre = "svc.mp.playAndSendQueue "
+            const logpre = "svc.mp.playAndSendQueue ";
             jt.log(logpre + srd.npsi.path);
             try {
                 //If the song is already playing, don't restart it.  Need
@@ -217,7 +217,19 @@ app.svc = (function () {
             contf(config); },
         writeConfig: function (config, ignore/*optobj*/, contf/*, errf*/) {
             Android.writeConfig(JSON.stringify(config, null, 2));
-            setTimeout(function () { contf(config); }, 50); }
+            setTimeout(function () { contf(config); }, 50); },
+        readFile: function (filename, contf, errf) {
+            try {
+                var text = Android.platReadFile(filename);
+                contf(text); 
+            } catch(e) {
+                errf(500, "svc.loc.readFile error " + e); } },
+        writeFile: function (filename, text, contf, errf) {
+            try {
+                Android.platWriteFile(filename, text);
+                contf(text);
+            } catch(e) {
+                errf(500, "svc.loc.writeFile error " + e); } }
     };  //end mgrs.loc returned functions
     }());
 
@@ -279,6 +291,8 @@ return {
     readDigDat: mgrs.sg.readDigDat,
     writeConfig: mgrs.loc.writeConfig,
     writeDigDat: mgrs.sg.writeDigDat,
+    readFile:mgrs.loc.readFile,
+    writeFile:mgrs.loc.writeFile,
     playSongQueue: mgrs.mp.playSongQueue,
     requestPlaybackStatus: mgrs.mp.requestPlaybackStatus,
     notePlaybackStatus: mgrs.mp.notePlaybackStatus,   //Android callback
