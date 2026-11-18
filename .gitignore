@@ -1,4 +1,17 @@
 ########################################
+# Ignore files added manually from update to Android Studio Rabbit 2
+########################################
+
+android/
+app/.idea/
+caches/
+daemon/
+kotlin-profile/
+native/
+wrapper/
+
+
+########################################
 # Ignore files originally sourced from standard github android template:
 ########################################
 

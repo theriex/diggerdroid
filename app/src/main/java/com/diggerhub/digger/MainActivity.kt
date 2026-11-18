@@ -22,23 +22,17 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.MediaStore
-import android.support.v4.media.MediaBrowserCompat.MediaItem
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.webkit.*
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
-import androidx.annotation.NonNull
-import androidx.annotation.Nullable
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
-import androidx.media.session.MediaButtonReceiver
 import androidx.webkit.WebViewAssetLoader
-import com.diggerhub.digger.BuildConfig
 import java.io.File
 import java.io.InputStream
 import java.net.URL
@@ -262,12 +256,11 @@ class DiggerAppInterface(private val context: MainActivity) {
     }
     @JavascriptInterface
     fun getAppVersion() : String {
-        return "v" + BuildConfig.VERSION_NAME
+        return "v1.6.61";
     }
     @JavascriptInterface
     fun getVersionCode() : String {
-        var bc = BuildConfig.VERSION_CODE
-        return "build " + bc.toString()
+        return "88"
     }
     @JavascriptInterface
     fun readConfig() : String {
