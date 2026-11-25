@@ -256,11 +256,11 @@ class DiggerAppInterface(private val context: MainActivity) {
     }
     @JavascriptInterface
     fun getAppVersion() : String {
-        return "v1.6.61";
+        return "v1.7.0";
     }
     @JavascriptInterface
     fun getVersionCode() : String {
-        return "88"
+        return "89"
     }
     @JavascriptInterface
     fun readConfig() : String {
